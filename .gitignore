@@ -152,6 +152,7 @@ outputs/*.png
 
 # tool-specific
 data/*
+!data/.gitkeep
 inputs/*.csv
 inputs/*.xlsx
 !inputs/example.xlsx
