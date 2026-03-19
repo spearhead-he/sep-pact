@@ -17,7 +17,7 @@ To install SEP-PACT locally, follow these steps:
 3. Open a terminal and navigate to the directory where the code is.
 4. Create a new virtual environment and activate it.
 5. Install the Python dependencies from the requirements.txt file with `pip install -r requirements.txt`.
-6. Open the Jupyter Notebook by running jupyter-lab sep-pact.ipynb
+6. Open the Jupyter Notebook by running `jupyter-lab sep-pact.ipynb`.
 
 ## How to use
 
