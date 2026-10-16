@@ -1,0 +1,74 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spearhead-sep-pact"
+description = "Onset time, peak flux and fluence of Solar Energetic Particle events with Solar Orbiter EPD/HET data"
+readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+authors = [
+    {name = "George Vasalos"},
+    {name = "Jan Gieseler"},
+    {name = "Athanasios Papaioannou"},
+]
+requires-python = ">=3.11"
+keywords = [
+    "solar energetic particles",
+    "onset time",
+    "peak flux",
+    "fluence",
+    "Solar Orbiter",
+    "heliophysics",
+    "space physics",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Astronomy",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+dependencies = [
+    "matplotlib>=3.8",
+    # numpy.trapezoid is new in numpy 2.0
+    "numpy>=2.0",
+    "openpyxl>=3.1",
+    # DataFrame.map is new in pandas 2.1
+    "pandas>=2.1",
+    "solo-epd-loader>=0.4.4",
+    # solo-epd-loader imports sunpy.timeseries and sunpy.visualization, whose dependencies are in these extras
+    "sunpy[timeseries,visualization]>=6.0",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+notebook = [
+    # ipykernel 7.0-7.3 can stop responding to messages (ipython/ipykernel#1529)
+    "ipykernel>=7.4",
+    "jupyter",
+]
+test = [
+    "flake8",
+    "nbmake",
+    "pytest",
+    "pytest-cov",
+]
+
+[project.urls]
+Repository = "https://github.com/spearhead-he/sep-pact"
+Documentation = "https://github.com/spearhead-he/sep-pact/tree/main/docs"
+Changelog = "https://github.com/spearhead-he/sep-pact/blob/main/CHANGELOG.md"
+Issues = "https://github.com/spearhead-he/sep-pact/issues"
+DOI = "https://doi.org/10.5281/zenodo.20157436"
+
+[tool.setuptools.dynamic]
+version = {attr = "spearhead.sep_pact.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+# spearhead is a namespace package, shared with other SPEARHEAD tools
+namespaces = true

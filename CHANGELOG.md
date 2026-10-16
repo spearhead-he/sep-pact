@@ -13,7 +13,8 @@ All notable changes of SEP-PACT. The format is based on [Keep a Changelog](https
 - Spike removal before the peak flux and the fluence (`spike_thresholds`).
 - `outputs/optimals.xlsx`, with the chosen onset, peak flux and fluence of each channel group, and the flags "Onset Copied" and "Onset at BG End". See [optimals.xlsx](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#optimalsxlsx).
 - `outputs/latest_onsets.csv` and `outputs/bg_means.csv`.
-- [User guide](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md) and this changelog.
+- Package `spearhead-sep-pact` (`spearhead.sep_pact`), with the code of the analysis: `SEPPACT_parameters`, the parameters, and `SEPPACT`, which runs the steps and keeps their results. The notebook has one cell per step, and the package can be used in scripts; see the [library guide](https://github.com/spearhead-he/sep-pact/blob/main/docs/library.md).
+- [User guide](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md), [library guide](https://github.com/spearhead-he/sep-pact/blob/main/docs/library.md) and this changelog.
 
 ### Changed
 
@@ -26,11 +27,12 @@ All notable changes of SEP-PACT. The format is based on [Keep a Changelog](https
 ### Fixed
 
 - Plots of channel groups with an onset but without a peak flux or a fluence.
+- The cache folder `intermediate_states/` is created if it does not exist.
 
 ### Upgrading from 0.1.0
 
-- Use Python 3.11 or newer, and reinstall the requirements: `pip install -r requirements.txt` (new: `openpyxl`, the `timeseries` and `visualization` extras of sunpy, solo-epd-loader 0.4.4).
-- Set the event list and the other settings in the parameters cell. The results are written to `outputs/`.
+- Use Python 3.11 or newer, and reinstall the requirements: `pip install -r requirements.txt`, which now installs the package with its notebook dependencies (new: `openpyxl`, the `timeseries` and `visualization` extras of sunpy, solo-epd-loader 0.4.4).
+- Set the event list and the other settings in the parameters cell, as arguments of `SEPPACT_parameters`. The results are written to `outputs/`.
 - The cache files of 0.1.0 in `intermediate_states/` (`protons_*.pkl`, `electrons_*.pkl`, `data_*.pkl`, `resampled_data_*.pkl`) are not used and can be deleted.
 - The results change: the onset, peak flux and fluence are now chosen per channel group from all resolutions and viewings, with the data quality check, the reference channel, the spike removal and the end at the first shock after the onset.
 
