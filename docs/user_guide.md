@@ -20,8 +20,6 @@
   - [Fluence](#fluence-step)
 - [Results](#results)
   - [optimals.xlsx](#optimalsxlsx)
-  - [latest_onsets.csv](#latest_onsetscsv)
-  - [bg_means.csv](#bg_meanscsv)
   - [Units](#units)
 - [Plots](#plots)
 
@@ -137,13 +135,13 @@ Each step is one call of the `SEPPACT` object `tool`, created in the parameters 
 1. **Setup:** imports the package.
 2. **Parameters:** `params = SEPPACT_parameters(...)` and `tool = SEPPACT(params)`; see [Parameters](#parameters).
 3. **Inputs:** `tool.run_inputs()` reads the shock list and the event list, and fills in the missing windows.
-4. **Data:** `tool.run_data()` downloads, groups and caches the HET data (see [Data](#data-step)), resamples the flux of each group to every resolution, and calculates the background means.
+4. **Data:** `tool.run_data()` downloads, groups and caches the HET data (see [Data](#data-step)), and resamples the flux of each group to every resolution.
 5. **Onset:** `tool.run_onsets()`; see [Onset](#onset-step).
 6. **Spikes:** `tool.run_spikes()`; see [Spikes](#spikes-step).
 7. **Peak flux:** `tool.run_peaks()`; see [Peak flux](#peak-flux-step).
 8. **Fluence:** `tool.run_fluences()`; see [Fluence](#fluence-step).
 9. **Plots:** `tool.plot_events()` writes one plot per event to `dir_plots` (see [Plots](#plots)).
-10. **Tables:** `tool.save_results()` writes `bg_means.csv`, `latest_onsets.csv` and `optimals.xlsx` (see [Results](#results)).
+10. **Tables:** `tool.save_results()` writes `optimals.xlsx` (see [Results](#results)).
 
 The results stay available as attributes of `tool`, e.g. `tool.df_optimals`; see the [library guide](library.md).
 
@@ -216,14 +214,6 @@ The chosen results, one row per event. The columns have five levels: particle, s
 | | `Resolution`, `Viewing` | Resolution (minutes) and viewing of the fluence |
 
 Empty cells mean that the channel group has no onset, peak flux or fluence for that event.
-
-### latest_onsets.csv
-
-The latest onset of each channel group among all the resolutions and viewings that can be used (see [Onset](#onset-step)), with its resolution and viewing. Together with the chosen onset, it shows how much the onset depends on the resolution and viewing.
-
-### bg_means.csv
-
-The mean flux in the background window of each event, for every channel group, particle, viewing and resolution, with the background start and end. The column names are `<group> <particle> <viewing> <resolution>m`.
 
 ### Units
 

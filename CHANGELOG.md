@@ -12,9 +12,9 @@ All notable changes of SEP-PACT. The format is based on [Keep a Changelog](https
 - Onsets limited to a window around the onset of the reference channel (`reference_onset_window`); channel groups without an onset take the one of the reference channel.
 - Spike removal before the peak flux and the fluence (`spike_thresholds`).
 - `outputs/optimals.xlsx`, with the chosen onset, peak flux and fluence of each channel group, and the flags "Onset Copied" and "Onset at BG End". See [optimals.xlsx](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#optimalsxlsx).
-- `outputs/latest_onsets.csv` and `outputs/bg_means.csv`.
 - Package `spearhead-sep-pact` (`spearhead.sep_pact`), with the code of the analysis: `SEPPACT_parameters`, the parameters, and `SEPPACT`, which runs the steps and keeps their results. The notebook has one cell per step, and the package can be used in scripts; see the [library guide](https://github.com/spearhead-he/sep-pact/blob/main/docs/library.md).
-- [User guide](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md), [library guide](https://github.com/spearhead-he/sep-pact/blob/main/docs/library.md) and this changelog.
+- [User guide](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md), [library guide](https://github.com/spearhead-he/sep-pact/blob/main/docs/library.md), [development guide](https://github.com/spearhead-he/sep-pact/blob/main/docs/development.md) and this changelog.
+- Tests of every part of the package, with synthetic data, and an end-to-end test of the example event; continuous integration with Python 3.11 to 3.14.
 
 ### Changed
 

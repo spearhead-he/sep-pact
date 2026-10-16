@@ -62,7 +62,8 @@ class SEPPACT_parameters:
     dir_saves: str = "intermediate_states"     # cached flux DataFrames
     dir_plots: str = "plots"                   # one figure per event
     dir_outputs: str = "outputs"               # result tables
-    file_events: str = "example.xlsx"          # event list in dir_inputs: Event No, Onset Time and optionally BG Start, BG End, End Time
+    # event list in dir_inputs: Event No, Onset Time and optionally BG Start, BG End, End Time
+    file_events: str = "example.xlsx"
     file_shocks: str = "shocks.dat"            # interplanetary shock list from ipshocks.helsinki.fi, in dir_inputs
 
     # Event windows, used where the event list leaves them empty
@@ -74,23 +75,29 @@ class SEPPACT_parameters:
     # Data
     level: str = "l2"
     viewings: list[str] = field(default_factory=lambda: ["sun", "asun", "north", "south"])
-    resample_freqs: list[timedelta] = field(default_factory=lambda: [timedelta(minutes=m) for m in (2, 5, 10, 30)])  # ascending order
+    # in ascending order
+    resample_freqs: list[timedelta] = field(default_factory=lambda: [timedelta(minutes=m) for m in (2, 5, 10, 30)])
     group_options: dict = field(default_factory=default_group_options)
     download_tries: int = 2                    # the tries after the first load only the background start to the end time
 
     # Onset
     onset_sigma: float = 2                     # threshold = background mean + onset_sigma * background standard deviation
     onset_points: int = 3                      # consecutive points above the threshold
-    reference_onset_window: timedelta = timedelta(hours=2.5)  # onsets further than this from the onset of the reference channel are ignored
+    # onsets further than this from the onset of the reference channel are ignored
+    reference_onset_window: timedelta = timedelta(hours=2.5)
 
     # Data quality
-    quality_tolerance: float = 0.1             # allowed transitions from valid to zero or NaN values after the onset, as a fraction of the points
+    # allowed transitions from valid to zero or NaN values after the onset, as a fraction of the points
+    quality_tolerance: float = 0.1
     quality_adjustable: bool = False           # if True, the tolerance grows with the resampling period
 
     # Spikes, peak and fluence
-    spike_thresholds: dict = field(default_factory=default_spike_thresholds)  # largest difference, in orders of magnitude, of a point from both neighbours, per resolution
-    peak_window_min: timedelta = timedelta(hours=10)  # spikes and peaks are searched in the first half of onset to end, if that is at least this long
-    fluence_peak_fraction: float = 0.5         # the fluence interval is bounded where the flux falls below this fraction of the peak
+    # smallest difference, in orders of magnitude, of a spike from both its neighbours, per resolution
+    spike_thresholds: dict = field(default_factory=default_spike_thresholds)
+    # spikes and peaks are searched in the first half of onset to end, if that is at least this long
+    peak_window_min: timedelta = timedelta(hours=10)
+    # the fluence interval is bounded where the flux falls below this fraction of the peak
+    fluence_peak_fraction: float = 0.5
     fluence_points: int = 2                    # consecutive points below the threshold that bound the fluence interval
 
     # Plots
@@ -134,7 +141,8 @@ class SEPPACT_parameters:
         """Checks the particles, sensors and reference channel of the energy channel groups"""
         for particle, groups in group_options.items():
             if particle not in self.PARTICLES:
-                raise ValueError(f"group_options has the particle {particle!r}; the particles are {', '.join(self.PARTICLES)}.")
+                raise ValueError(f"group_options has the particle {particle!r}; "
+                                 f"the particles are {', '.join(self.PARTICLES)}.")
             for label, spec in groups.items():
                 if spec.get("sensor") not in self.SENSORS:
                     raise ValueError(f"The group {label!r} of {particle} has the sensor {spec.get('sensor')!r}; "
@@ -144,7 +152,8 @@ class SEPPACT_parameters:
         references = [(particle, label) for particle, groups in group_options.items()
                       for label, spec in groups.items() if "reference_channel" in spec]
         if len(references) > 1:
-            raise ValueError(f"More than one reference channel found: {references}. Mark at most one group with \"reference_channel\".")
+            raise ValueError(f"More than one reference channel found: {references}. "
+                             "Mark at most one group with \"reference_channel\".")
 
     def check(self) -> None:
         """Checks the parameters that depend on each other"""

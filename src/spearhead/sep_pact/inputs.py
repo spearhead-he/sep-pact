@@ -36,7 +36,8 @@ def read_events(path: str, params: SEPPACT_parameters) -> pd.DataFrame:
                                    })
     df_event_times = df_event_times.dropna(how="all")
     if "Onset Time" not in df_event_times.columns:
-        raise ValueError(f"The event list {path} has no column \"Onset Time\". Its columns are: {', '.join(df_event_times.columns)}.")
+        raise ValueError(f"The event list {path} has no column \"Onset Time\". "
+                         f"Its columns are: {', '.join(df_event_times.columns)}.")
     for column in ["BG Start", "BG End", "End Time"]:
         if column not in df_event_times.columns:
             df_event_times[column] = pd.NaT
