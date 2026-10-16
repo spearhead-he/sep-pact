@@ -56,6 +56,7 @@ test = [
     "nbmake",
     "pytest",
     "pytest-cov",
+    "pytest-mpl",
 ]
 
 [project.urls]
@@ -64,6 +65,14 @@ Documentation = "https://github.com/spearhead-he/sep-pact/tree/main/docs"
 Changelog = "https://github.com/spearhead-he/sep-pact/blob/main/CHANGELOG.md"
 Issues = "https://github.com/spearhead-he/sep-pact/issues"
 DOI = "https://doi.org/10.5281/zenodo.20157436"
+
+[tool.pytest.ini_options]
+markers = [
+    "network: downloads data (deselect with -m \"not network\")",
+]
+
+[tool.coverage.run]
+source_pkgs = ["spearhead.sep_pact"]
 
 [tool.setuptools.dynamic]
 version = {attr = "spearhead.sep_pact.__version__"}
