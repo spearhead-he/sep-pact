@@ -153,6 +153,8 @@ outputs/*.png
 # tool-specific
 data/*
 !data/.gitkeep
+outputs/*
+!outputs/.gitkeep
 inputs/*.csv
 
 # Excel files, except the example inputs
