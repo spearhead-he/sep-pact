@@ -1,5 +1,7 @@
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20157436-blue)](https://doi.org/10.5281/zenodo.20157436)
-[![Python](https://img.shields.io/badge/python-3.11-blue)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)](https://www.python.org/)
+[![pytest](https://github.com/spearhead-he/sep-pact/actions/workflows/pytest.yml/badge.svg)](https://github.com/spearhead-he/sep-pact/actions/workflows/pytest.yml)
+[![codecov](https://codecov.io/gh/spearhead-he/sep-pact/branch/main/graph/badge.svg)](https://codecov.io/gh/spearhead-he/sep-pact)
 [![Project Status: Active – The project has reached a stable, usable state and is being actively developed.](https://www.repostatus.org/badges/latest/active.svg)](https://www.repostatus.org/#active)
 [![website](https://img.shields.io/badge/Project%20Website-blue)](https://spearhead-he.eu)
 
@@ -25,7 +27,7 @@ Each quantity is calculated at several time resolutions and in the four viewing 
 - **Notebook:** `sep-pact.ipynb`, the whole analysis, from the parameters to the plots and tables, one cell per step.
 - **Package:** `spearhead.sep_pact`, the code of the analysis, also usable in scripts without the notebook.
 
-Tested in Linux with Python 3.11.
+Tested in Linux with Python 3.11, 3.12, 3.13 and 3.14.
 
 ## How to install
 
@@ -68,6 +70,7 @@ A red title marks a channel group without an onset, or with an onset at the end 
 
 - [User guide](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md): the parameters, the input files and their formats, the steps of the notebook, and the results and plots.
 - [Library guide](https://github.com/spearhead-he/sep-pact/blob/main/docs/library.md): using the package in scripts, its modules and their main functions.
+- [Development](https://github.com/spearhead-he/sep-pact/blob/main/docs/development.md): the development installation, the tests and their commands, the baseline images and the continuous integration.
 - [Changelog](https://github.com/spearhead-he/sep-pact/blob/main/CHANGELOG.md): the changes of each version.
 
 ## Contributing
