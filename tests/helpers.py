@@ -5,12 +5,33 @@ back to the background. With a constant background, the threshold equals the bac
 (which steps back while the earlier point is lower) gives the last background point before the rise: one resolution
 step before the rise time, when the rise time is on a bin boundary.
 """
+import functools
 from datetime import datetime, timedelta
 
+import matplotlib
 import numpy as np
 import pandas as pd
+import pytest
 
 from spearhead.sep_pact import SEPPACT, SEPPACT_parameters
+
+# the baseline images were made with matplotlib 3.11, whose layout differs from older versions by a few pixels
+BASELINE_MATPLOTLIB = (3, 11)
+
+
+def image_compare(test):
+    """Compares the figure returned by the test with its baseline image (with --mpl), with matplotlib 3.11 or newer
+
+    With an older matplotlib, the test runs without the comparison.
+    """
+    if tuple(matplotlib.__version_info__[:2]) >= BASELINE_MATPLOTLIB:
+        return pytest.mark.mpl_image_compare(tolerance=5, style="default")(test)
+
+    @functools.wraps(test)
+    def without_comparison(*args, **kwargs) -> None:
+        test(*args, **kwargs)
+    return without_comparison
+
 
 STEP = timedelta(minutes=1)                         # cadence of the synthetic data
 OFFSET = timedelta(seconds=3, microseconds=240000)  # sub-second timestamps, as in the EPD data

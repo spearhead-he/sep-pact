@@ -6,6 +6,7 @@ import pytest
 
 from spearhead.sep_pact import SEPPACT, SEPPACT_parameters
 from spearhead.sep_pact.views import plot_event
+from tests.helpers import image_compare
 
 # known results of event 20 of inputs/example.xlsx: onset, its resolution (minutes) and viewing, the onset flags,
 # the peak flux and its time, and the fluence and its resolution (minutes)
@@ -54,6 +55,6 @@ def test_example_event(tool, particle, group):
 
 
 @pytest.mark.network
-@pytest.mark.mpl_image_compare(tolerance=5, style="default")
+@image_compare
 def test_example_event_plot(tool):
     return plot_event(tool, 20)

@@ -7,7 +7,7 @@ from matplotlib.figure import Figure
 from matplotlib.text import Text
 
 from spearhead.sep_pact.views import plot_event, plot_filename
-from tests.helpers import T0, VIEWINGS, FakeEPD, synthetic_tool
+from tests.helpers import T0, VIEWINGS, FakeEPD, image_compare, synthetic_tool
 
 
 def right_title(ax) -> Text:
@@ -55,13 +55,13 @@ def test_plot_event_with_one_channel_group(tmp_path, monkeypatch):
     assert len(plot_event(tool, 1).axes) == 1
 
 
-@pytest.mark.mpl_image_compare(tolerance=5, style="default")
+@image_compare
 def test_plot_event(tmp_path, monkeypatch):
     rises = {(particle, viewing): T0 for particle in ("electrons", "protons") for viewing in VIEWINGS}
     return plot_event(run(synthetic_tool(tmp_path, monkeypatch, rises, shocks=[T0 + timedelta(hours=8)])), 1)
 
 
-@pytest.mark.mpl_image_compare(tolerance=5, style="default")
+@image_compare
 def test_plot_event_copied_onsets_at_the_end_of_the_background(tmp_path, monkeypatch):
     rises = {("electrons", viewing): T0 for viewing in VIEWINGS}  # flat protons
     events = {1: {"Onset Time": T0, "BG End": T0 - timedelta(minutes=2)}}
@@ -73,7 +73,7 @@ def test_plot_event_copied_onsets_at_the_end_of_the_background(tmp_path, monkeyp
     return fig
 
 
-@pytest.mark.mpl_image_compare(tolerance=5, style="default")
+@image_compare
 def test_plot_event_without_proton_onsets(tmp_path, monkeypatch):
     rises = {(particle, viewing): T0 for particle in ("electrons", "protons") for viewing in VIEWINGS}
     rises.update({("protons", viewing): T0 + timedelta(hours=3) for viewing in VIEWINGS})  # outside the reference window
@@ -83,7 +83,7 @@ def test_plot_event_without_proton_onsets(tmp_path, monkeypatch):
     return fig
 
 
-@pytest.mark.mpl_image_compare(tolerance=5, style="default")
+@image_compare
 def test_plot_event_without_peak_flux_and_fluence(tmp_path, monkeypatch):
     tool = run(synthetic_tool(tmp_path, monkeypatch))
     for quantity in ("Peak Flux", "Fluence"):

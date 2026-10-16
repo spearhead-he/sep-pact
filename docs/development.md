@@ -63,7 +63,7 @@ The baseline images of the plots are in `tests/baseline/`. Without `--mpl`, the 
 pytest --mpl-generate-path=tests/baseline tests/test_views.py tests/test_end_to_end.py
 ```
 
-Use the matplotlib version that CI installs, since other versions can draw slightly differently.
+The baselines are made with matplotlib 3.11, the version that CI installs; older versions lay out the figures a few pixels differently. With matplotlib older than 3.11, the image tests run without the comparison (`image_compare` in `tests/helpers.py`).
 
 ## Continuous integration
 
