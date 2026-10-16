@@ -154,6 +154,8 @@ outputs/*.png
 data/*
 !data/.gitkeep
 inputs/*.csv
-inputs/*.xlsx
-!inputs/example.xlsx
+
+# Excel files, except the example inputs
+*.xlsx
+!inputs/example*.xlsx
 plots/*.png
