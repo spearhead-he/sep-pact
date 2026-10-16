@@ -1,0 +1,47 @@
+# Installs the package with the test dependencies, then runs flake8, the tests (with the image comparison and
+# coverage) and the notebook, with every supported Python version
+
+name: pytest
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+
+    steps:
+    - uses: actions/checkout@v7
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v7
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install -e ".[notebook,test]"
+    - name: Lint with flake8
+      run: |
+        # stop the build if there are Python syntax errors or undefined names
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    - name: Test with pytest
+      run: |
+        pytest -rP --mpl --mpl-baseline-path=baseline --mpl-baseline-relative --mpl-generate-summary=html --mpl-results-path='/home/runner/work/sep-pact/tests/report/' --cov --cov-report=xml tests/ --nbmake *.ipynb
+    - name: Upload coverage reports to Codecov
+      uses: codecov/codecov-action@v7
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+    - name: Save the pytest-mpl report as an artifact
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ matrix.python-version }}-pytest-mpl-report-artifact
+        path: "/home/runner/work/sep-pact/tests/report/"
