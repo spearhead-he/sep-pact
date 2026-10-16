@@ -66,13 +66,13 @@ params.check()
 | Method | Step |
 |---|---|
 | `run_inputs()` | Reads the shock list and the event list |
-| `run_data(redownload=False)` | Loads the flux of the channel groups from the cache, or downloads it (always with `redownload=True`), resamples it and calculates the background means |
+| `run_data(redownload=False)` | Loads the flux of the channel groups from the cache, or downloads it (always with `redownload=True`) and resamples it |
 | `run_onsets()` | Detects the onsets of every resolution and viewing, and chooses one per event and channel group |
 | `run_spikes()` | Finds the spikes after the chosen onsets |
 | `run_peaks()` | Finds the peak flux of every resolution and viewing, and chooses one |
 | `run_fluences()` | Calculates the fluence of every resolution, and chooses one |
 | `plot_events()` | Writes one plot per event to `dir_plots` |
-| `save_results()` | Writes `bg_means.csv`, `latest_onsets.csv` and `optimals.xlsx` to `dir_outputs` |
+| `save_results()` | Writes `optimals.xlsx` to `dir_outputs` |
 
 ## Results
 
@@ -83,11 +83,9 @@ After the steps, the results are attributes of the `SEPPACT` object:
 | `events` | The event list, with the windows filled in and the period of data (`Plot Start`, `Plot End`) |
 | `shocktimes` | The times of the shocks (`pandas.Series`) |
 | `dfs_flux` | The flux of the channel groups: `dfs_flux[particle][sensor][resolution]` is a DataFrame indexed by event number and time, with the columns (viewing, group) |
-| `df_means` | The mean flux of the background windows (as `bg_means.csv`) |
 | `dfs_events` | The results of every resolution and viewing: `dfs_events[particle][sensor][resolution]` is a DataFrame indexed by event number, with the columns (viewing, group, quantity) |
 | `spikes` | The spike times: `spikes[particle][sensor][resolution][viewing][group][event_no]` |
 | `df_optimals` | The chosen results (as `optimals.xlsx`, with the resolutions as `timedelta`); see [optimals.xlsx](user_guide.md#optimalsxlsx) |
-| `df_latest_onsets` | The latest usable onset of each event and channel group (as `latest_onsets.csv`) |
 | `df_ts_quality` | The data quality of the chosen onset: the number of points, of zero or NaN values, and the ratio of transitions to them |
 
 ## Plots

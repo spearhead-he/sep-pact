@@ -100,18 +100,6 @@ def test_onset_of_the_finest_resolution_and_earliest_viewing(tmp_path, monkeypat
     assert not onset(tool, "protons", "8 MeV", "Onset at BG End")
 
 
-def test_latest_onset(tmp_path, monkeypatch):
-    rises = {(particle, viewing): T0 for particle in ("electrons", "protons") for viewing in VIEWINGS}
-    rises[("electrons", "sun")] = T0 + timedelta(minutes=10)
-    tool = synthetic_tool(tmp_path, monkeypatch, rises)
-    tool.run_onsets()
-    latest = {field: tool.df_latest_onsets.loc[1, ("electrons", "HET", "1 MeV", field)]
-              for field in ("Onset Time", "Resolution", "Viewing")}
-    assert latest == {"Onset Time": pd.Timestamp(T0 + timedelta(minutes=8)),
-                      "Resolution": timedelta(minutes=2),
-                      "Viewing": "sun"}
-
-
 def test_onsets_outside_the_reference_window_are_ignored(tmp_path, monkeypatch):
     rises = {(particle, viewing): T0 for particle in ("electrons", "protons") for viewing in VIEWINGS}
     rises.update({("protons", viewing): T0 + timedelta(hours=3) for viewing in VIEWINGS})

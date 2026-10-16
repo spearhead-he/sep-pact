@@ -225,11 +225,9 @@ class SEPPACT:
     - events: the event list, with the windows filled in
     - shocktimes: the times of the shocks
     - dfs_flux: the flux of the channel groups, per particle, sensor and resolution
-    - df_means: the mean flux of the background windows
     - dfs_events: the onset, peak flux and fluence of every resolution and viewing, per particle, sensor and resolution
     - spikes: the spike times, per particle, sensor, resolution, viewing, channel group and event
     - df_optimals: the chosen onset, peak flux and fluence of each event and channel group
-    - df_latest_onsets: the latest usable onset of each event and channel group
     - df_ts_quality: the data quality of the chosen onset of each event and channel group
     """
 
@@ -242,11 +240,9 @@ class SEPPACT:
         self.events = None
         self.energies = None
         self.dfs_flux = None
-        self.df_means = None
         self.dfs_events = None
         self.df_optimals = None
         self.df_ts_quality = None
-        self.df_latest_onsets = None
         self.spikes = None
 
     def _analysis_end(self, event_no: int, onset: datetime) -> datetime:
@@ -267,8 +263,7 @@ class SEPPACT:
         self.events = read_events(pjoin(p.dir_inputs, p.file_events), p)
 
     def run_data(self, redownload: bool = False) -> None:
-        """Loads the flux of the channel groups (from the cache, or downloads it), resamples it, and calculates the
-        background means"""
+        """Loads the flux of the channel groups (from the cache, or downloads it), and resamples it"""
         p = self.params
         os.makedirs(p.dir_saves, exist_ok=True)
         self.energies = load_energies(self.sensors_all,
@@ -287,17 +282,6 @@ class SEPPACT:
                                  p.download_tries,
                                  redownload=redownload)
         self.dfs_flux = resample_flux(dfs_flux, p.resample_freqs)
-
-        df_means = self.events[["BG Start", "BG End"]].copy()
-        for i in df_means.index:
-            for particle in self.particles:
-                for sensor in self.sensors[particle]:
-                    for mevlbl in self._groups(particle):
-                        for resample_freq in p.resample_freqs:
-                            for viewing in p.viewings:
-                                df_means.loc[i, f"{mevlbl} {particle} {viewing} {int(resample_freq.seconds/60)}m"] = \
-                                    self.dfs_flux[particle][sensor][resample_freq].loc[i, (viewing, mevlbl)].mean()
-        self.df_means = df_means
 
     def run_onsets(self) -> None:
         """Detects the onsets of every resolution and viewing, and chooses one per event and channel group"""
@@ -373,24 +357,16 @@ class SEPPACT:
                                                                         for sensor in self.sensors[particle]
                                                                         for mevlbl in self._groups(particle)
                                                                         for col in ["Length", "Zeroes", "Ratio"]]))
-        columns = [(particle, sensor, mevlbl, col)
-                   for particle in self.particles
-                   for sensor in self.sensors[particle]
-                   for mevlbl in self._groups(particle)
-                   for col in ["Onset Time", "Resolution", "Viewing"]]
-        df_latest_onsets = pd.DataFrame(index=df_optimals.index, columns=pd.MultiIndex.from_tuples(columns))
 
         for event_no in df_optimals.index:
             for particle in reference_iter(self.particles, self.reference_channel):
                 for sensor in reference_iter(self.sensors[particle], self.reference_channel):
                     for mevlbl in reference_iter(self.params.group_options[particle].keys(), self.reference_channel):
-                        self._choose_onset(event_no, particle, sensor, mevlbl,
-                                           dfs_events, df_optimals, df_ts_quality, df_latest_onsets)
+                        self._choose_onset(event_no, particle, sensor, mevlbl, dfs_events, df_optimals, df_ts_quality)
 
         self.dfs_events = dfs_events
         self.df_optimals = df_optimals
         self.df_ts_quality = df_ts_quality
-        self.df_latest_onsets = df_latest_onsets
 
     def _choose_onset(self,
                       event_no: int,
@@ -399,9 +375,8 @@ class SEPPACT:
                       mevlbl: str,
                       dfs_events: dict,
                       df_optimals: pd.DataFrame,
-                      df_ts_quality: pd.DataFrame,
-                      df_latest_onsets: pd.DataFrame) -> None:
-        """Chooses the onset of one event and channel group, and its latest usable onset"""
+                      df_ts_quality: pd.DataFrame) -> None:
+        """Chooses the onset of one event and channel group"""
         p = self.params
         # empty until the reference channel, which is processed first, has its onset
         reference_onset = None
@@ -470,21 +445,6 @@ class SEPPACT:
             df_ts_quality.loc[event_no, (particle, sensor, mevlbl, "Length")] = None
             df_ts_quality.loc[event_no, (particle, sensor, mevlbl, "Zeroes")] = None
             df_ts_quality.loc[event_no, (particle, sensor, mevlbl, "Ratio")] = None
-
-        latest_res = None
-        latest_viewing = None
-        latest_onset = None
-        for resample_freq in p.resample_freqs:
-            for quality_metrics in eligible_tss[resample_freq]:
-                viewing = quality_metrics["viewing"]
-                onset = dfs_events[particle][sensor][resample_freq].loc[event_no, (viewing, mevlbl, "Onset Time")]
-                if pd.isna(latest_onset) or onset > latest_onset:
-                    latest_res = resample_freq
-                    latest_viewing = viewing
-                    latest_onset = onset
-        df_latest_onsets.loc[event_no, (particle, sensor, mevlbl, "Onset Time")] = latest_onset
-        df_latest_onsets.loc[event_no, (particle, sensor, mevlbl, "Resolution")] = latest_res
-        df_latest_onsets.loc[event_no, (particle, sensor, mevlbl, "Viewing")] = latest_viewing
 
     def run_spikes(self) -> None:
         """Finds the spikes of every resolution and viewing after the chosen onset"""
@@ -649,10 +609,8 @@ class SEPPACT:
             plt.close(fig)
 
     def save_results(self) -> None:
-        """Writes bg_means.csv, latest_onsets.csv and optimals.xlsx (resolutions in minutes) to dir_outputs"""
+        """Writes optimals.xlsx (resolutions in minutes) to dir_outputs"""
         p = self.params
         os.makedirs(p.dir_outputs, exist_ok=True)
-        self.df_means.to_csv(pjoin(p.dir_outputs, "bg_means.csv"))
-        self.df_latest_onsets.to_csv(pjoin(p.dir_outputs, "latest_onsets.csv"))
         self.df_optimals.map(lambda x: x.total_seconds()/60 if not pd.isna(x) and type(x) is timedelta else x) \
             .to_excel(pjoin(p.dir_outputs, "optimals.xlsx"))

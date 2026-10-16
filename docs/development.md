@@ -31,8 +31,6 @@ The tests are in `tests/`, one file per part of the tool:
 
 All the tests except the end-to-end test run offline, with synthetic data built so that the expected results are known (`tests/helpers.py`): a constant background with a linear rise and decay, and a fake `epd_load` that returns data shaped like the real one. The end-to-end test downloads data and is marked `network`; it runs after the offline tests.
 
-`test_results.py::test_background_means` is an expected failure (`xfail`): `bg_means.csv` is the mean flux of the whole data period of each event, not of its background window.
-
 To run all the tests, from the base directory of the repository:
 
 ```bash
