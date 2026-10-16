@@ -33,7 +33,7 @@ The notebook `sep-pact.ipynb` runs the whole analysis. Set the parameters in its
 
 ## Parameters
 
-All the parameters are in the parameters cell at the top of the notebook. The defaults are listed below.
+All the parameters are in the parameters cell at the top of the notebook, as the arguments of `SEPPACT_parameters`. A parameter left out keeps its default; the defaults are listed below. An unknown parameter name or an invalid value raises an error that names the valid choices.
 
 ### Files and folders
 
@@ -132,17 +132,20 @@ The columns `BG Start`, `BG End` and `End Time` may be missing or have empty cel
 
 ## Steps of the notebook
 
-1. **Setup:** imports.
-2. **Parameters:** see [Parameters](#parameters).
-3. **Inputs:** the shock list and the event list are read, and the missing windows are filled in.
-4. **Data:** the HET data are downloaded, grouped and cached (see [Data](#data-step)).
-5. **Resampling:** the flux of each group is resampled to every resolution. The background means are written to `bg_means.csv`.
-6. **Onset:** see [Onset](#onset-step).
-7. **Spikes:** see [Spikes](#spikes-step).
-8. **Peak flux:** see [Peak flux](#peak-flux-step).
-9. **Fluence:** see [Fluence](#fluence-step).
-10. **Plots:** one plot per event in `dir_plots` (see [Plots](#plots)).
-11. **Export:** `latest_onsets.csv` and `optimals.xlsx` (see [Results](#results)).
+Each step is one call of the `SEPPACT` object `tool`, created in the parameters cell:
+
+1. **Setup:** imports the package.
+2. **Parameters:** `params = SEPPACT_parameters(...)` and `tool = SEPPACT(params)`; see [Parameters](#parameters).
+3. **Inputs:** `tool.run_inputs()` reads the shock list and the event list, and fills in the missing windows.
+4. **Data:** `tool.run_data()` downloads, groups and caches the HET data (see [Data](#data-step)), resamples the flux of each group to every resolution, and calculates the background means.
+5. **Onset:** `tool.run_onsets()`; see [Onset](#onset-step).
+6. **Spikes:** `tool.run_spikes()`; see [Spikes](#spikes-step).
+7. **Peak flux:** `tool.run_peaks()`; see [Peak flux](#peak-flux-step).
+8. **Fluence:** `tool.run_fluences()`; see [Fluence](#fluence-step).
+9. **Plots:** `tool.plot_events()` writes one plot per event to `dir_plots` (see [Plots](#plots)).
+10. **Tables:** `tool.save_results()` writes `bg_means.csv`, `latest_onsets.csv` and `optimals.xlsx` (see [Results](#results)).
+
+The results stay available as attributes of `tool`, e.g. `tool.df_optimals`; see the [library guide](library.md).
 
 <a id="data-step"></a>
 ### Data

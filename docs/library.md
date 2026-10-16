@@ -1,0 +1,112 @@
+# SEP-PACT library guide
+
+- [Installation](#installation)
+- [A minimal script](#a-minimal-script)
+- [Parameters](#parameters)
+- [The analysis](#the-analysis)
+- [Results](#results)
+- [Plots](#plots)
+- [Modules](#modules)
+
+The notebook `sep-pact.ipynb` uses the package `spearhead.sep_pact`, which can also be used in scripts. This guide describes its main classes and functions; the [user guide](user_guide.md) describes the parameters, the steps and the results.
+
+## Installation
+
+From the repository folder:
+
+```bash
+pip install -e .
+```
+
+`pip install -e ".[notebook]"` also installs the notebook dependencies, and `pip install -e ".[test]"` the test dependencies.
+
+## A minimal script
+
+```python
+from spearhead.sep_pact import SEPPACT, SEPPACT_parameters
+
+params = SEPPACT_parameters(file_events="example.xlsx")
+tool = SEPPACT(params)
+tool.run_inputs()
+tool.run_data()
+tool.run_onsets()
+tool.run_spikes()
+tool.run_peaks()
+tool.run_fluences()
+tool.plot_events()
+tool.save_results()
+
+print(tool.df_optimals)
+```
+
+The script reads `inputs/example.xlsx` and `inputs/shocks.dat`, writes the plots to `plots/` and the tables to `outputs/`, relative to the working folder.
+
+## Parameters
+
+`SEPPACT_parameters` (`spearhead.sep_pact.conf`) is a dataclass with all the parameters and their defaults; see [Parameters](user_guide.md#parameters). A parameter left out keeps its default:
+
+```python
+from datetime import timedelta
+
+params = SEPPACT_parameters(file_events="my_events.xlsx", onset_sigma=3)
+params.resample_freqs = [timedelta(minutes=5), timedelta(minutes=30)]
+params.spike_thresholds = {timedelta(minutes=5): 2.0, timedelta(minutes=30): 3.0}
+params.check()
+```
+
+- An unknown name raises an `AttributeError` that lists the parameters.
+- An invalid value (e.g. a viewing that is not `sun`, `asun`, `north` or `south`, or resolutions not in ascending order) raises a `ValueError` or `TypeError`.
+- `check()` checks the parameters that depend on each other, e.g. a spike threshold for each resolution. `SEPPACT` calls it when it is created.
+- `params.reference_channel` is the reference channel of `group_options`, as a dict with `particle`, `mev` (the group label) and `sensor`, or `None`.
+
+## The analysis
+
+`SEPPACT(params)` (`spearhead.sep_pact.analysis`) runs the steps of the analysis, which are called in this order:
+
+| Method | Step |
+|---|---|
+| `run_inputs()` | Reads the shock list and the event list |
+| `run_data(redownload=False)` | Loads the flux of the channel groups from the cache, or downloads it (always with `redownload=True`), resamples it and calculates the background means |
+| `run_onsets()` | Detects the onsets of every resolution and viewing, and chooses one per event and channel group |
+| `run_spikes()` | Finds the spikes after the chosen onsets |
+| `run_peaks()` | Finds the peak flux of every resolution and viewing, and chooses one |
+| `run_fluences()` | Calculates the fluence of every resolution, and chooses one |
+| `plot_events()` | Writes one plot per event to `dir_plots` |
+| `save_results()` | Writes `bg_means.csv`, `latest_onsets.csv` and `optimals.xlsx` to `dir_outputs` |
+
+## Results
+
+After the steps, the results are attributes of the `SEPPACT` object:
+
+| Attribute | Content |
+|---|---|
+| `events` | The event list, with the windows filled in and the period of data (`Plot Start`, `Plot End`) |
+| `shocktimes` | The times of the shocks (`pandas.Series`) |
+| `dfs_flux` | The flux of the channel groups: `dfs_flux[particle][sensor][resolution]` is a DataFrame indexed by event number and time, with the columns (viewing, group) |
+| `df_means` | The mean flux of the background windows (as `bg_means.csv`) |
+| `dfs_events` | The results of every resolution and viewing: `dfs_events[particle][sensor][resolution]` is a DataFrame indexed by event number, with the columns (viewing, group, quantity) |
+| `spikes` | The spike times: `spikes[particle][sensor][resolution][viewing][group][event_no]` |
+| `df_optimals` | The chosen results (as `optimals.xlsx`, with the resolutions as `timedelta`); see [optimals.xlsx](user_guide.md#optimalsxlsx) |
+| `df_latest_onsets` | The latest usable onset of each event and channel group (as `latest_onsets.csv`) |
+| `df_ts_quality` | The data quality of the chosen onset: the number of points, of zero or NaN values, and the ratio of transitions to them |
+
+## Plots
+
+`spearhead.sep_pact.views.plot_event(tool, event_no, filename=None)` returns the plot of one event as a matplotlib `Figure`, and saves it if a file name is given. `plot_filename(folder, event_no)` gives the file name used by `plot_events()`.
+
+```python
+from spearhead.sep_pact.views import plot_event
+
+fig = plot_event(tool, 20)
+fig.savefig("event_20.pdf")
+```
+
+## Modules
+
+| Module | Content |
+|---|---|
+| `conf` | `SEPPACT_parameters`, and the default channel groups and spike thresholds |
+| `inputs` | `read_shocks(path)` and `read_events(path, params)` |
+| `data` | `load_energies()`, `group_channels_de()`, `flux_cache_file()`, `download_data()` and `resample_flux()`: the EPD data, the flux of the channel groups and its cache |
+| `analysis` | `SEPPACT`, and the functions of the steps: `onset_detection_sigma()`, `quality_analysis()`, `detect_spikes()`, `remove_spikes()`, `get_peak_flux()`, `fluence_interval()`, `peak_search_end()` and `shocks_in_range()` |
+| `views` | `plot_event()` and `plot_filename()` |

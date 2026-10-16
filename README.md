@@ -22,7 +22,8 @@ Each quantity is calculated at several time resolutions and in the four viewing 
 
 - **Inputs:** an event list (Excel file with the event onsets and, optionally, the background windows and end times) and the list of interplanetary shocks from the [ipshocks database](https://ipshocks.helsinki.fi/), provided in `inputs/shocks.dat`.
 - **Outputs:** one plot per event in `plots/`, and the results in `outputs/`: `optimals.xlsx` (the chosen onset, peak flux and fluence of each channel group), `latest_onsets.csv` and `bg_means.csv`.
-- **Notebook:** `sep-pact.ipynb`, the whole analysis, from the parameters to the plots and tables.
+- **Notebook:** `sep-pact.ipynb`, the whole analysis, from the parameters to the plots and tables, one cell per step.
+- **Package:** `spearhead.sep_pact`, the code of the analysis, also usable in scripts without the notebook.
 
 Tested in Linux with Python 3.11.
 
@@ -37,7 +38,7 @@ You can access SEP-PACT online on the JupyterHub server of the SPEARHEAD project
 1. Install Python 3.11 or newer, e.g. with [miniforge](https://github.com/conda-forge/miniforge).
 2. Clone the repository: `git clone https://github.com/spearhead-he/sep-pact.git`, and open a terminal in the `sep-pact` folder.
 3. Create a new virtual environment and activate it, e.g. `python -m venv venv_sep_pact` and `source venv_sep_pact/bin/activate`.
-4. Install the dependencies: `pip install -r requirements.txt`.
+4. Install the package and the notebook dependencies: `pip install -r requirements.txt` (the same as `pip install -e ".[notebook]"`).
 5. Open the notebook: `jupyter-lab sep-pact.ipynb`.
 
 ## How to use
@@ -66,6 +67,7 @@ A red title marks a channel group without an onset, or with an onset at the end 
 ## Documentation
 
 - [User guide](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md): the parameters, the input files and their formats, the steps of the notebook, and the results and plots.
+- [Library guide](https://github.com/spearhead-he/sep-pact/blob/main/docs/library.md): using the package in scripts, its modules and their main functions.
 - [Changelog](https://github.com/spearhead-he/sep-pact/blob/main/CHANGELOG.md): the changes of each version.
 
 ## Contributing
