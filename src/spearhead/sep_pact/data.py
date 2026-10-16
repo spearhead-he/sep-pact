@@ -187,8 +187,8 @@ def download_data(events: pd.DataFrame,
                         specs = [(mevlbl, mev_specs) for mevlbl, mev_specs in group_options[particle].items()
                                  if mev_specs["sensor"] == sensor]
                         groups = [[f"{prefix}_Flux_{channel}" for channel in mev_specs["channels"]] for _, mev_specs in specs]
-                        energy_bins_widths = [[energies[sensor][f"{prefix}_Bins_Width"][channel] for channel in mev_specs["channels"]]
-                                              for _, mev_specs in specs]
+                        widths = energies[sensor][f"{prefix}_Bins_Width"]
+                        energy_bins_widths = [[widths[channel] for channel in mev_specs["channels"]] for _, mev_specs in specs]
                         names = [mevlbl for mevlbl, _ in specs]
                         df_temp = group_channels_de(df_temp, groups, energy_bins_widths, names)
 

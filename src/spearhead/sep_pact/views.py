@@ -28,7 +28,8 @@ def _plot_no_onset(ax, tool, event_no: int, particle: str, sensor: str, mevlbl: 
     n_zeroes = tool.df_ts_quality.loc[event_no, (particle, sensor, mevlbl, "Zeroes")]
     ratio = tool.df_ts_quality.loc[event_no, (particle, sensor, mevlbl, "Ratio")]
     ax_title_params["color"] = "red"
-    ax.set_title(f"{mevlbl} {particle}/{sensor} ({p.fallback_viewing} viewing, {int(p.resample_freqs[-1].total_seconds()/60)} mins resolution)",
+    resolution = int(p.resample_freqs[-1].total_seconds()/60)
+    ax.set_title(f"{mevlbl} {particle}/{sensor} ({p.fallback_viewing} viewing, {resolution} mins resolution)",
                  **ax_title_params)
     flux = tool.dfs_flux[particle][sensor][p.resample_freqs[-1]].loc[event_no, (p.fallback_viewing, mevlbl)]
     ax.plot(flux.index, flux.values, label="flux", color="orange", alpha=0.3)
@@ -75,7 +76,8 @@ def _plot_channel(ax, tool, event_no: int, particle: str, sensor: str, mevlbl: s
     onset_at_bg_end = not pd.isna(onset_at_bg_end) and bool(onset_at_bg_end)
     if onset_at_bg_end:
         ax_title_params["color"] = "red"
-    ax.set_title(f"{mevlbl} {particle}/{sensor} ({best_viewing_ot} viewing, {best_resample_lbl_ot} resolution)", **ax_title_params)
+    ax.set_title(f"{mevlbl} {particle}/{sensor} ({best_viewing_ot} viewing, {best_resample_lbl_ot} resolution)",
+                 **ax_title_params)
     top_lim = 1e6
 
     # set variables
@@ -119,13 +121,16 @@ def _plot_channel(ax, tool, event_no: int, particle: str, sensor: str, mevlbl: s
     ax.axhline(y=bg_level, color="blue", linestyle="--", label="background level")
     ax.axvline(x=onset_time, color="green", linestyle="--", label=f"onset time ({onset_time.strftime('%Y-%m-%d %H:%M')})")
     if not pd.isna(peak_time):
-        ax.scatter(peak_time, peak_flux, color="red", zorder=5, label=f"peak flux ({peak_flux:.2E}/{peak_time.strftime('%Y-%m-%d %H:%M')})")
-        ax.axhline(y=peak_flux * p.fluence_peak_fraction, color="purple", linestyle="--", label=f"{p.fluence_peak_fraction:g} peak flux")
+        ax.scatter(peak_time, peak_flux, color="red", zorder=5,
+                   label=f"peak flux ({peak_flux:.2E}/{peak_time.strftime('%Y-%m-%d %H:%M')})")
+        ax.axhline(y=peak_flux * p.fluence_peak_fraction, color="purple", linestyle="--",
+                   label=f"{p.fluence_peak_fraction:g} peak flux")
     if not pd.isna(fluence_threshold):
         ax.axhline(y=fluence_threshold, color="purple", linestyle="--", alpha=0.5)
     ax.axhline(y=threshold, color="red", linestyle="--", label=f"{p.onset_sigma:g}σ threshold")
     if not pd.isna(fluence_start) and not pd.isna(fluence_end):
-        ax.fill_between([fluence_start, fluence_end], bot_lim, top_lim, color="brown", alpha=0.2, label=f"fluence ({fluence:.2E})")
+        ax.fill_between([fluence_start, fluence_end], bot_lim, top_lim, color="brown", alpha=0.2,
+                        label=f"fluence ({fluence:.2E})")
     shocktimes_in_plot = shocks_in_range(tool.shocktimes, flux.index[0], flux.index[-1])
     for shocktime in shocktimes_in_plot:
         ax.axvline(x=shocktime, color="purple", linestyle=":", label=f"shock time ({shocktime.strftime('%Y-%m-%d %H:%M')})")
@@ -134,7 +139,8 @@ def _plot_channel(ax, tool, event_no: int, particle: str, sensor: str, mevlbl: s
     if has_peak:
         ax.text(peak_time + timedelta(minutes=15),
                 peak_flux,
-                f"{peak_flux:.2E}/{peak_time.strftime('%H:%M')}/{best_viewing_pf}/{int(best_resample_pf.total_seconds()/60)} mins",
+                f"{peak_flux:.2E}/{peak_time.strftime('%H:%M')}/{best_viewing_pf}/"
+                f"{int(best_resample_pf.total_seconds()/60)} mins",
                 color="red")
     onset_notes = []
     if onset_copied:
