@@ -8,7 +8,7 @@ SEP-PACT (Solar Energetic Particle Analysis and Calculation Tool) is a software 
 
 ### Access online (JupyterHub)
 
-You can access the complete VDA tool online on the JupyterHub server of the SPEARHEAD project. All you need is a (free) [GitHub account](https://github.com/signup) for verification. [Access the tool by opening this link!](https://jupyterhub.spearhead-he.eu/hub/user-redirect/git-pull?repo=https%3A%2F%2Fgithub.com%2Fspearhead-he%2Fsep-pact&urlpath=lab%2Ftree%2Fsep-pact%2Fsep-pact.ipynb&branch=main)
+You can access SEP-PACT online on the JupyterHub server of the SPEARHEAD project. All you need is a (free) [GitHub account](https://github.com/signup) for verification. [Access the tool by opening this link!](https://jupyterhub.spearhead-he.eu/hub/user-redirect/git-pull?repo=https%3A%2F%2Fgithub.com%2Fspearhead-he%2Fsep-pact&urlpath=lab%2Ftree%2Fsep-pact%2Fsep-pact.ipynb&branch=main)
 
 ### Install locally
 To install SEP-PACT locally, follow these steps:
@@ -21,16 +21,16 @@ To install SEP-PACT locally, follow these steps:
 
 ## How to use
 
-Serially run the cells in the sep-pact.ipynb notenboook. Users can adjust variables according to their preferences.
+Serially run the cells in the sep-pact.ipynb notebook. All the settings are in the parameters cell at the top: the event list (`file_events` in `inputs/`, by default `example.xlsx`), the event windows, the energy channel groups, the viewings, the resolutions and the parameters of the onset, spike, peak flux and fluence calculations.
 
-Some cells save intermediate results to files. If these files already exist, users can skip the corresponding cells and load the saved data directly. A markdown cell is present before such cells, indicating whether they can be skipped.
+The downloaded flux is cached in `intermediate_states/` and loaded from there when the notebook is run again with the same settings. The results are written to `outputs/` (`optimals.xlsx`, `latest_onsets.csv`, `bg_means.csv`) and the plots to `plots/`. In `optimals.xlsx`, "Onset Copied" marks onsets taken from the reference channel and "Onset at BG End" onsets at the end of the background window.
 
 ### Example output
 ![example](example_output/example_event.png)
 
 Each panel corresponds to a *different energy channel*. The top panel shows *1 MeV electrons*, the second panel shows *8 MeV protons*, the third panel *25 MeV protons*, and the fourth panel *50 MeV protons*. In each panel, the *green-shaded region* indicates the **background flux** used to determine the background level, while the *brown-shaded region* marks the time interval over which the particle flux is integrated to obtain the **event fluence**. The **onset time** is calculated using the *n-sigma method*, and the fluence is derived following the approach described by [Jiggens et al. (2018)](https://doi.org/10.1051/swsc/2018010).
 
-Additionally, each panel includes a **ratio** indicating the *percentage of allowed transitions from valid to zero or NaN values occurring after the onset time, relative to the total number of data points*. This ratio serves as an indicator of data sparsity: when it exceeds 0.1, the results for that channel are considered unreliable and the subplot title is printed red.
+Additionally, each panel includes a **ratio** indicating the *percentage of allowed transitions from valid to zero or NaN values occurring after the onset time, relative to the total number of data points*. This ratio serves as an indicator of data sparsity: a resolution and viewing whose ratio reaches the tolerance (0.1 by default) is not used. If none can be used, the channel has no onset and its subplot title is printed red. The title is also red when the onset is at the end of the background window.
 
 Interplanetary (IP) shocks that may be associated with each event are identified using the [ipshocks database](https://ipshocks.helsinki.fi/) (provided as a file (inputs/shocks.dat)) and are imprinted at each panel as a dashed vertical line
 
