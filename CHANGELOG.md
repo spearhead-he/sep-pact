@@ -18,6 +18,7 @@ All notable changes of SEP-PACT. The format is based on [Keep a Changelog](https
 
 ### Changed
 
+- The event list is a CSV file (`inputs/events_example.csv`) instead of an Excel file; Excel event lists are no longer accepted. See [Event list](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#event-list).
 - The event list may have an `End Time` column; `BG Start`, `BG End` and `End Time` are optional, with defaults set in the parameters.
 - The analysis of a channel group ends at the first shock after its onset, instead of the event end being moved to the first shock after the background.
 - The flux is downloaded per event, viewing and sensor, combined into channel groups before resampling, and cached in `intermediate_states/` in a file named after the settings. The previous cache files are not used.
@@ -32,6 +33,7 @@ All notable changes of SEP-PACT. The format is based on [Keep a Changelog](https
 ### Upgrading from 0.1.0
 
 - Use Python 3.11 or newer, and reinstall the requirements: `pip install -r requirements.txt`, which now installs the package with its notebook dependencies (new: `openpyxl`, the `timeseries` and `visualization` extras of sunpy, solo-epd-loader 0.4.4).
+- Save the event list as CSV, e.g. in Excel or with `pd.read_excel("my_events.xlsx", index_col=0).to_csv("my_events.csv", date_format="%Y-%m-%d %H:%M:%S")`; see [Event list](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#event-list).
 - Set the event list and the other settings in the parameters cell, as arguments of `SEPPACT_parameters`. The results are written to `outputs/`.
 - The cache files of 0.1.0 in `intermediate_states/` (`protons_*.pkl`, `electrons_*.pkl`, `data_*.pkl`, `resampled_data_*.pkl`) are not used and can be deleted.
 - The results change: the onset, peak flux and fluence are now chosen per channel group from all resolutions and viewings, with the data quality check, the reference channel, the spike removal and the end at the first shock after the onset.

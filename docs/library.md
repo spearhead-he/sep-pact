@@ -25,7 +25,7 @@ pip install -e .
 ```python
 from spearhead.sep_pact import SEPPACT, SEPPACT_parameters
 
-params = SEPPACT_parameters(file_events="example.xlsx")
+params = SEPPACT_parameters(file_events="events_example.csv")
 tool = SEPPACT(params)
 tool.run_inputs()
 tool.run_data()
@@ -39,7 +39,7 @@ tool.save_results()
 print(tool.df_optimals)
 ```
 
-The script reads `inputs/example.xlsx` and `inputs/shocks.dat`, writes the plots to `plots/` and the tables to `outputs/`, relative to the working folder.
+The script reads `inputs/events_example.csv` and `inputs/shocks.dat`, writes the plots to `plots/` and the tables to `outputs/`, relative to the working folder.
 
 ## Parameters
 
@@ -48,7 +48,7 @@ The script reads `inputs/example.xlsx` and `inputs/shocks.dat`, writes the plots
 ```python
 from datetime import timedelta
 
-params = SEPPACT_parameters(file_events="my_events.xlsx", onset_sigma=3)
+params = SEPPACT_parameters(file_events="my_events.csv", onset_sigma=3)
 params.resample_freqs = [timedelta(minutes=5), timedelta(minutes=30)]
 params.spike_thresholds = {timedelta(minutes=5): 2.0, timedelta(minutes=30): 3.0}
 params.check()

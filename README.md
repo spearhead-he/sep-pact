@@ -45,7 +45,7 @@ You can access SEP-PACT online on the JupyterHub server of the SPEARHEAD project
 
 ## How to use
 
-1. Set the parameters in the parameters cell at the top of `sep-pact.ipynb`: the event list (`file_events`, a file in `inputs/`, by default `example.xlsx`), the event windows, the energy channel groups, the viewings, the resolutions and the parameters of the onset, spike, peak flux and fluence calculations.
+1. Set the parameters in the parameters cell at the top of `sep-pact.ipynb`: the event list (`file_events`, a CSV file in `inputs/`, by default `events_example.csv`), the event windows, the energy channel groups, the viewings, the resolutions and the parameters of the onset, spike, peak flux and fluence calculations.
 2. Run all the cells, in order.
 3. Find the plots in `plots/` and the results in `outputs/`.
 

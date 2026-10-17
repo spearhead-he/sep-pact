@@ -67,7 +67,7 @@ class SEPPACT_parameters:
     dir_plots: str = "plots"                   # one figure per event
     dir_outputs: str = "outputs"               # result tables
     # event list in dir_inputs: Event No, Onset Time and optionally BG Start, BG End, End Time
-    file_events: str = "example.xlsx"
+    file_events: str = "events_example.csv"
     file_shocks: str = "shocks.dat"            # interplanetary shock list from ipshocks.helsinki.fi, in dir_inputs
 
     # Event windows, used where the event list leaves them empty

@@ -8,7 +8,7 @@ from spearhead.sep_pact import SEPPACT, SEPPACT_parameters
 from spearhead.sep_pact.views import plot_event
 from tests.helpers import image_compare
 
-# known results of event 20 of inputs/example.xlsx: onset, its resolution (minutes) and viewing, the onset flags,
+# known results of event 20 of inputs/events_example.csv: onset, its resolution (minutes) and viewing, the onset flags,
 # the peak flux and its time, and the fluence and its resolution (minutes)
 EXPECTED = {
     ("electrons", "1 MeV"): ("2021-11-01 01:50", 2, "north", False, False, 72.64031219482422, "2021-11-01 02:58", 312964, 30),

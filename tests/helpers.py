@@ -47,17 +47,17 @@ def make_params(tmp_path, **parameters) -> SEPPACT_parameters:
     folders = {name: str(tmp_path / name) for name in ("inputs", "data", "intermediate_states", "plots", "outputs")}
     (tmp_path / "inputs").mkdir(exist_ok=True)
     defaults = {"dir_inputs": folders["inputs"], "dir_data": folders["data"], "dir_saves": folders["intermediate_states"],
-                "dir_plots": folders["plots"], "dir_outputs": folders["outputs"], "file_events": "events.xlsx"}
+                "dir_plots": folders["plots"], "dir_outputs": folders["outputs"], "file_events": "events.csv"}
     defaults.update(parameters)
     return SEPPACT_parameters(**defaults)
 
 
-def write_events(folder, rows: dict, name: str = "events.xlsx") -> str:
-    """Writes an event list {event_no: {column: time}} as an Excel file, and returns its path"""
+def write_events(folder, rows: dict, name: str = "events.csv") -> str:
+    """Writes an event list {event_no: {column: time}} as a CSV file, and returns its path"""
     df = pd.DataFrame.from_dict(rows, orient="index")
     df.index.name = "Event No"
     path = str(folder / name)
-    df.to_excel(path)
+    df.to_csv(path)
     return path
 
 

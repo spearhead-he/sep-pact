@@ -9,7 +9,7 @@ from spearhead.sep_pact.conf import default_group_options
 
 def test_defaults():
     p = SEPPACT_parameters()
-    assert p.file_events == "example.xlsx"
+    assert p.file_events == "events_example.csv"
     assert p.viewings == ["sun", "asun", "north", "south"]
     assert p.resample_freqs == [timedelta(minutes=2), timedelta(minutes=5), timedelta(minutes=10), timedelta(minutes=30)]
     assert p.group_options == default_group_options()

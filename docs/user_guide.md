@@ -42,7 +42,7 @@ All the parameters are in the parameters cell at the top of the notebook, as the
 | `dir_saves` | `"intermediate_states"` | Folder of the cached flux |
 | `dir_plots` | `"plots"` | Folder of the plots, one per event |
 | `dir_outputs` | `"outputs"` | Folder of the result tables |
-| `file_events` | `"example.xlsx"` | [Event list](#event-list), in `dir_inputs` |
+| `file_events` | `"events_example.csv"` | [Event list](#event-list), in `dir_inputs` |
 | `file_shocks` | `"shocks.dat"` | [Shock list](#shock-list), in `dir_inputs` |
 
 ### Event windows
@@ -112,7 +112,13 @@ The default groups are:
 
 ### Event list
 
-An Excel file in `dir_inputs`, with one row per event (see `inputs/example.xlsx`):
+A CSV file in `dir_inputs`, with one row per event (see `inputs/events_example.csv`):
+
+```
+Event No,Onset Time,BG Start,BG End
+20,2021-11-01 02:05:00,2021-10-31 19:00:00,2021-11-01 01:30:00
+```
+
 
 | Column | Required | Description |
 |---|---|---|
@@ -122,7 +128,14 @@ An Excel file in `dir_inputs`, with one row per event (see `inputs/example.xlsx`
 | `BG End` | no | End of the background window; default `Onset Time` − `bg_end_before_onset` |
 | `End Time` | no | End of the event; default `Onset Time` + `end_after_onset` |
 
-The columns `BG Start`, `BG End` and `End Time` may be missing or have empty cells. The times are in UTC. The onset itself is always detected in the data, after `BG End`.
+The columns `BG Start`, `BG End` and `End Time` may be missing or have empty cells. The times are in UTC, as `YYYY-MM-DD HH:MM:SS` or `YYYY-MM-DD HH:MM` (ISO 8601). Spaces after the commas are allowed. The onset itself is always detected in the data, after `BG End`.
+
+Event lists in Excel (`.xlsx`), as in version 0.1.0, are no longer accepted. To convert one, save it as CSV in Excel or a spreadsheet program, or with pandas:
+
+```python
+import pandas as pd
+pd.read_excel("my_events.xlsx", index_col=0).to_csv("my_events.csv", date_format="%Y-%m-%d %H:%M:%S")
+```
 
 ### Shock list
 
