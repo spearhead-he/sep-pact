@@ -67,10 +67,10 @@ params.check()
 |---|---|
 | `run_inputs()` | Reads the shock list and the event list |
 | `run_data(redownload=False)` | Loads the flux of the channel groups from the cache, or downloads it (always with `redownload=True`) and resamples it |
-| `run_onsets()` | Detects the onsets of every resolution and viewing, and chooses one per event and channel group |
+| `run_onsets()` | Detects the onsets of every resolution and viewing (`calculate_onsets()`), and chooses one per event and channel group (`select_onsets()`) |
 | `run_spikes()` | Finds the spikes after the chosen onsets |
-| `run_peaks()` | Finds the peak flux of every resolution and viewing, and chooses one |
-| `run_fluences()` | Calculates the fluence of every resolution, and chooses one |
+| `run_peaks()` | Finds the peak flux of every resolution and viewing (`calculate_peaks()`), and chooses one (`select_peaks()`) |
+| `run_fluences()` | Calculates the fluence of every resolution (`calculate_fluences()`), and chooses one (`select_fluences()`) |
 | `plot_events()` | Writes one plot per event to `dir_plots` |
 | `save_results()` | Writes `optimals.xlsx` to `dir_outputs` |
 
@@ -105,6 +105,6 @@ fig.savefig("event_20.pdf")
 |---|---|
 | `conf` | `SEPPACT_parameters`, and the default channel groups and spike thresholds |
 | `inputs` | `read_shocks(path)` and `read_events(path, params)` |
-| `data` | `load_energies()`, `group_channels_de()`, `flux_cache_file()`, `download_data()` and `resample_flux()`: the EPD data, the flux of the channel groups and its cache |
-| `analysis` | `SEPPACT`, and the functions of the steps: `onset_detection_sigma()`, `quality_analysis()`, `detect_spikes()`, `remove_spikes()`, `get_peak_flux()`, `fluence_interval()`, `peak_search_end()` and `shocks_in_range()` |
+| `data` | `load()`, which returns the EPD data of each particle as `ParticleData` (the flux with the channel numbers as columns, and the energies of the channels), `load_energies()`, `group_channels_de()`, `flux_cache_file()`, `download_data()` and `resample_flux()`: the EPD data, the flux of the channel groups and its cache |
+| `analysis` | `SEPPACT`, and the functions of the steps: `onset_detection_sigma()` (which returns the onset, the background start and end, and the background level and threshold), `quality_analysis()`, `detect_spikes()`, `remove_spikes()`, `get_peak_flux()`, `fluence_interval()`, `peak_search_end()` and `shocks_in_range()` |
 | `views` | `plot_event()` and `event_plot_filename()` |
