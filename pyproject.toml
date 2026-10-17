@@ -36,8 +36,7 @@ dependencies = [
     "matplotlib>=3.8",
     # numpy.trapezoid is new in numpy 2.0
     "numpy>=2.0",
-    "openpyxl>=3.1",
-    # DataFrame.map is new in pandas 2.1
+    # to_datetime(format="ISO8601") is new in pandas 2.0
     "pandas>=2.1",
     "solo-epd-loader>=0.4.4",
     # solo-epd-loader imports sunpy.timeseries and sunpy.visualization, whose dependencies are in these extras

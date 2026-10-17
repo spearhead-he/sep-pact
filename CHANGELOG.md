@@ -11,7 +11,7 @@ All notable changes of SEP-PACT. The format is based on [Keep a Changelog](https
 - Choice of the resolution and viewing of each channel group, with a data quality check after the onset (`quality_tolerance`).
 - Onsets limited to a window around the onset of the reference channel (`reference_onset_window`); channel groups without an onset take the one of the reference channel.
 - Spike removal before the peak flux and the fluence (`spike_thresholds`).
-- `outputs/optimals.xlsx`, with the chosen onset, peak flux and fluence of each channel group, and the flags "Onset Copied" and "Onset at BG End". See [optimals.xlsx](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#optimalsxlsx).
+- `outputs/results.csv`, with the chosen onset, peak flux and fluence of each event and channel group, the energy range of the group, and the flags `Onset Copied` and `Onset at BG End`. See [results.csv](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#resultscsv).
 - Package `spearhead-sep-pact` (`spearhead.sep_pact`), with the code of the analysis: `SEPPACT_parameters`, the parameters, and `SEPPACT`, which runs the steps and keeps their results. The notebook has one cell per step, and the package can be used in scripts; see the [library guide](https://github.com/spearhead-he/sep-pact/blob/main/docs/library.md).
 - [User guide](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md), [library guide](https://github.com/spearhead-he/sep-pact/blob/main/docs/library.md), [development guide](https://github.com/spearhead-he/sep-pact/blob/main/docs/development.md) and this changelog.
 - Tests of every part of the package, with synthetic data, and an end-to-end test of the example event; continuous integration with Python 3.11 to 3.14.
@@ -32,7 +32,7 @@ All notable changes of SEP-PACT. The format is based on [Keep a Changelog](https
 
 ### Upgrading from 0.1.0
 
-- Use Python 3.11 or newer, and reinstall the requirements: `pip install -r requirements.txt`, which now installs the package with its notebook dependencies (new: `openpyxl`, the `timeseries` and `visualization` extras of sunpy, solo-epd-loader 0.4.4).
+- Use Python 3.11 or newer, and reinstall the requirements: `pip install -r requirements.txt`, which now installs the package with its notebook dependencies (new: the `timeseries` and `visualization` extras of sunpy, solo-epd-loader 0.4.4).
 - Save the event list as CSV, e.g. in Excel or with `pd.read_excel("my_events.xlsx", index_col=0).to_csv("my_events.csv", date_format="%Y-%m-%d %H:%M:%S")`; see [Event list](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#event-list).
 - Set the event list and the other settings in the parameters cell, as arguments of `SEPPACT_parameters`. The results are written to `outputs/`.
 - The cache files of 0.1.0 in `intermediate_states/` (`protons_*.pkl`, `electrons_*.pkl`, `data_*.pkl`, `resampled_data_*.pkl`) are not used and can be deleted.
