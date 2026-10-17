@@ -1,6 +1,6 @@
 """The plots, as matplotlib figures"""
 from datetime import timedelta
-from os.path import join as pjoin
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -13,9 +13,9 @@ from matplotlib.patches import Patch
 from .analysis import reference_iter, shocks_in_range
 
 
-def plot_filename(folder: str, event_no: int) -> str:
-    """Returns the file name of the plot of an event"""
-    return pjoin(folder, f"event_{event_no:03}.png")
+def event_plot_filename(tool, event_no: int) -> str:
+    """Returns the default file name of the plot of an event, e.g. event_007.png"""
+    return f"event_{event_no:03}.png"
 
 
 def _plot_no_onset(ax, tool, event_no: int, particle: str, sensor: str, mevlbl: str, ax_title_params: dict) -> None:
@@ -48,129 +48,139 @@ def _plot_no_onset(ax, tool, event_no: int, particle: str, sensor: str, mevlbl: 
     ax.set_ylim([bot_lim, top_lim])
 
 
-def _plot_channel(ax, tool, event_no: int, particle: str, sensor: str, mevlbl: str, ax_title_params: dict) -> None:
-    """Plots a channel group with an onset: the flux, background, onset, peak flux, fluence and shocks"""
-    p = tool.params
-    opt = tool.df_optimals
-    bg_start = tool.events.loc[event_no, "BG Start"]
-    bg_end = tool.events.loc[event_no, "BG End"]
-    calc_end = tool.events.loc[event_no, "End Time"]
-    ts_length = tool.df_ts_quality.loc[event_no, (particle, sensor, mevlbl, "Length")]
-    n_zeroes = tool.df_ts_quality.loc[event_no, (particle, sensor, mevlbl, "Zeroes")]
-    ratio = tool.df_ts_quality.loc[event_no, (particle, sensor, mevlbl, "Ratio")]
+def _channel_values(tool, event_no: int, particle: str, sensor: str, mevlbl: str) -> SimpleNamespace:
+    """Returns the values of the panel of a channel group with an onset: its flux at the resolutions and viewings of
+    the onset, peak flux and fluence, and the results"""
+    def opt(quantity: str, field: str):
+        return tool.df_optimals.loc[event_no, (particle, sensor, mevlbl, quantity, field)]
 
-    best_resample_ot = opt.loc[event_no, (particle, sensor, mevlbl, "Onset Time", "Resolution")]
-    best_viewing_ot = opt.loc[event_no, (particle, sensor, mevlbl, "Onset Time", "Viewing")]
-    best_resample_lbl_ot = f"{int(best_resample_ot.total_seconds()/60)} mins"
-    best_resample_pf = opt.loc[event_no, (particle, sensor, mevlbl, "Peak Flux", "Resolution")]
-    best_viewing_pf = opt.loc[event_no, (particle, sensor, mevlbl, "Peak Flux", "Viewing")]
-    best_resample_flu = opt.loc[event_no, (particle, sensor, mevlbl, "Fluence", "Resolution")]
-    best_viewing_flu = opt.loc[event_no, (particle, sensor, mevlbl, "Fluence", "Viewing")]
+    def quality(field: str):
+        return tool.df_ts_quality.loc[event_no, (particle, sensor, mevlbl, field)]
+
+    v = SimpleNamespace(
+        bg_start=tool.events.loc[event_no, "BG Start"],
+        bg_end=tool.events.loc[event_no, "BG End"],
+        calc_end=tool.events.loc[event_no, "End Time"],
+        ts_length=quality("Length"), n_zeroes=quality("Zeroes"), ratio=quality("Ratio"),
+        resample_ot=opt("Onset Time", "Resolution"), viewing_ot=opt("Onset Time", "Viewing"),
+        resample_pf=opt("Peak Flux", "Resolution"), viewing_pf=opt("Peak Flux", "Viewing"),
+        resample_flu=opt("Fluence", "Resolution"), viewing_flu=opt("Fluence", "Viewing"),
+        onset_time=opt("Onset Time", "Onset Time"),
+        peak_time=opt("Peak Flux", "Peak Flux Time"), peak_flux=opt("Peak Flux", "Peak Flux"),
+        fluence_start=opt("Fluence", "Fluence Start"), fluence_end=opt("Fluence", "Fluence End"),
+        fluence=opt("Fluence", "Fluence"), fluence_threshold=opt("Fluence", "Fluence Threshold"),
+    )
     # a channel with an onset can still have no peak flux or no fluence
-    has_peak = not pd.isna(best_resample_pf)
-    has_fluence = not pd.isna(best_resample_flu)
+    v.has_peak = not pd.isna(v.resample_pf)
+    v.has_fluence = not pd.isna(v.resample_flu)
+    v.onset_copied = not pd.isna(opt("Onset Time", "Onset Copied")) and bool(opt("Onset Time", "Onset Copied"))
+    v.onset_at_bg_end = not pd.isna(opt("Onset Time", "Onset at BG End")) and bool(opt("Onset Time", "Onset at BG End"))
+    fluxes = tool.dfs_flux[particle][sensor]
+    v.flux = fluxes[v.resample_ot].loc[event_no, (v.viewing_ot, mevlbl)]
+    v.flux2 = None
+    if v.has_peak and (v.viewing_ot != v.viewing_pf or v.resample_ot != v.resample_pf):
+        v.flux2 = fluxes[v.resample_pf].loc[event_no, (v.viewing_pf, mevlbl)]
+    v.flux3 = None
+    if v.has_fluence and v.resample_pf != v.resample_flu:
+        v.flux3 = fluxes[v.resample_flu].loc[event_no, (v.viewing_flu, mevlbl)]
+    events = tool.dfs_events[particle][sensor][v.resample_ot]
+    v.bg_level = events.loc[event_no, (v.viewing_ot, mevlbl, "BG Level")]
+    v.threshold = events.loc[event_no, (v.viewing_ot, mevlbl, "Threshold")]
+    if len(shocks := shocks_in_range(tool.shocktimes, v.onset_time, v.calc_end)) > 0:
+        v.calc_end = shocks[0]
+    v.shocktimes = shocks_in_range(tool.shocktimes, v.flux.index[0], v.flux.index[-1])
+    return v
 
-    onset_copied = opt.loc[event_no, (particle, sensor, mevlbl, "Onset Time", "Onset Copied")]
-    onset_copied = not pd.isna(onset_copied) and bool(onset_copied)
-    onset_at_bg_end = opt.loc[event_no, (particle, sensor, mevlbl, "Onset Time", "Onset at BG End")]
-    onset_at_bg_end = not pd.isna(onset_at_bg_end) and bool(onset_at_bg_end)
-    if onset_at_bg_end:
-        ax_title_params["color"] = "red"
-    ax.set_title(f"{mevlbl} {particle}/{sensor} ({best_viewing_ot} viewing, {best_resample_lbl_ot} resolution)",
-                 **ax_title_params)
+
+def _axis_limits(v: SimpleNamespace) -> tuple[float, float]:
+    """Returns the y-axis limits: two decades above the decade of the peak flux (or of the maximum flux), and one
+    below the decade of the background level (or four below the top)"""
     top_lim = 1e6
-
-    # set variables
-    flux = tool.dfs_flux[particle][sensor][best_resample_ot].loc[event_no, (best_viewing_ot, mevlbl)]
-    flux2 = None
-    if has_peak and (best_viewing_ot != best_viewing_pf or best_resample_ot != best_resample_pf):
-        flux2 = tool.dfs_flux[particle][sensor][best_resample_pf].loc[event_no, (best_viewing_pf, mevlbl)]
-    flux3 = None
-    if has_fluence and best_resample_pf != best_resample_flu:
-        flux3 = tool.dfs_flux[particle][sensor][best_resample_flu].loc[event_no, (best_viewing_flu, mevlbl)]
-    bg_level = tool.dfs_events[particle][sensor][best_resample_ot].loc[event_no, (best_viewing_ot, mevlbl, "BG Level")]
-    onset_time = opt.loc[event_no, (particle, sensor, mevlbl, "Onset Time", "Onset Time")]
-    if len(shocks := shocks_in_range(tool.shocktimes, onset_time, calc_end)) > 0:
-        calc_end = shocks[0]
-    threshold = tool.dfs_events[particle][sensor][best_resample_ot].loc[event_no, (best_viewing_ot, mevlbl, "Threshold")]
-
-    peak_time = opt.loc[event_no, (particle, sensor, mevlbl, "Peak Flux", "Peak Flux Time")]
-    peak_flux = opt.loc[event_no, (particle, sensor, mevlbl, "Peak Flux", "Peak Flux")]
-    if not pd.isna(peak_time):
-        top_lim = float(f"1e{int(f'{peak_flux:e}'.split('e')[1]) + 2}")
-    elif flux.max() > 0:
-        top_lim = float(f"1e{int(f'{flux.max():e}'.split('e')[1]) + 2}")
-    if not pd.isna(bg_level) and bg_level > 0:
-        bot_lim = float(f"1e{int(f'{bg_level:e}'.split('e')[1]) - 1}")
+    if not pd.isna(v.peak_time):
+        top_lim = float(f"1e{int(f'{v.peak_flux:e}'.split('e')[1]) + 2}")
+    elif v.flux.max() > 0:
+        top_lim = float(f"1e{int(f'{v.flux.max():e}'.split('e')[1]) + 2}")
+    if not pd.isna(v.bg_level) and v.bg_level > 0:
+        bot_lim = float(f"1e{int(f'{v.bg_level:e}'.split('e')[1]) - 1}")
     else:
         bot_lim = float(f"1e{int(f'{top_lim:e}'.split('e')[1]) - 4}")
+    return bot_lim, top_lim
 
-    fluence_start = opt.loc[event_no, (particle, sensor, mevlbl, "Fluence", "Fluence Start")]
-    fluence_end = opt.loc[event_no, (particle, sensor, mevlbl, "Fluence", "Fluence End")]
-    fluence = opt.loc[event_no, (particle, sensor, mevlbl, "Fluence", "Fluence")]
-    fluence_threshold = opt.loc[event_no, (particle, sensor, mevlbl, "Fluence", "Fluence Threshold")]
 
-    # data plot
-    ax.fill_between([onset_time, calc_end], bot_lim, top_lim, color="black", alpha=0.1, label="Event range")
-    ax.plot(flux.index, flux.values, label="flux", color="orange")
-    if flux2 is not None:
-        ax.plot(flux2.index, flux2.values, label="flux", color="orange", linestyle="--", alpha=0.5)
-    if flux3 is not None:
-        ax.plot(flux3.index, flux3.values, label="flux", color="brown", linestyle=":", alpha=0.5)
-    ax.fill_between([bg_start, bg_end], bot_lim, top_lim, color="green", alpha=0.3, label="background sample")
-    ax.axhline(y=bg_level, color="blue", linestyle="--", label="background level")
-    ax.axvline(x=onset_time, color="green", linestyle="--", label=f"onset time ({onset_time.strftime('%Y-%m-%d %H:%M')})")
-    if not pd.isna(peak_time):
-        ax.scatter(peak_time, peak_flux, color="red", zorder=5,
-                   label=f"peak flux ({peak_flux:.2E}/{peak_time.strftime('%Y-%m-%d %H:%M')})")
-        ax.axhline(y=peak_flux * p.fluence_peak_fraction, color="purple", linestyle="--",
-                   label=f"{p.fluence_peak_fraction:g} peak flux")
-    if not pd.isna(fluence_threshold):
-        ax.axhline(y=fluence_threshold, color="purple", linestyle="--", alpha=0.5)
-    ax.axhline(y=threshold, color="red", linestyle="--", label=f"{p.onset_sigma:g}σ threshold")
-    if not pd.isna(fluence_start) and not pd.isna(fluence_end):
-        ax.fill_between([fluence_start, fluence_end], bot_lim, top_lim, color="brown", alpha=0.2,
-                        label=f"fluence ({fluence:.2E})")
-    shocktimes_in_plot = shocks_in_range(tool.shocktimes, flux.index[0], flux.index[-1])
-    for shocktime in shocktimes_in_plot:
+def _draw_data(ax, v: SimpleNamespace, bot_lim: float, top_lim: float, params) -> None:
+    """Draws the event range, the flux, the background, the onset, the peak flux, the thresholds, the fluence and
+    the shocks"""
+    ax.fill_between([v.onset_time, v.calc_end], bot_lim, top_lim, color="black", alpha=0.1, label="Event range")
+    ax.plot(v.flux.index, v.flux.values, label="flux", color="orange")
+    if v.flux2 is not None:
+        ax.plot(v.flux2.index, v.flux2.values, label="flux", color="orange", linestyle="--", alpha=0.5)
+    if v.flux3 is not None:
+        ax.plot(v.flux3.index, v.flux3.values, label="flux", color="brown", linestyle=":", alpha=0.5)
+    ax.fill_between([v.bg_start, v.bg_end], bot_lim, top_lim, color="green", alpha=0.3, label="background sample")
+    ax.axhline(y=v.bg_level, color="blue", linestyle="--", label="background level")
+    ax.axvline(x=v.onset_time, color="green", linestyle="--", label=f"onset time ({v.onset_time.strftime('%Y-%m-%d %H:%M')})")
+    if not pd.isna(v.peak_time):
+        ax.scatter(v.peak_time, v.peak_flux, color="red", zorder=5,
+                   label=f"peak flux ({v.peak_flux:.2E}/{v.peak_time.strftime('%Y-%m-%d %H:%M')})")
+        ax.axhline(y=v.peak_flux * params.fluence_peak_fraction, color="purple", linestyle="--",
+                   label=f"{params.fluence_peak_fraction:g} peak flux")
+    if not pd.isna(v.fluence_threshold):
+        ax.axhline(y=v.fluence_threshold, color="purple", linestyle="--", alpha=0.5)
+    ax.axhline(y=v.threshold, color="red", linestyle="--", label=f"{params.onset_sigma:g}\u03C3 threshold")
+    if not pd.isna(v.fluence_start) and not pd.isna(v.fluence_end):
+        ax.fill_between([v.fluence_start, v.fluence_end], bot_lim, top_lim, color="brown", alpha=0.2,
+                        label=f"fluence ({v.fluence:.2E})")
+    for shocktime in v.shocktimes:
         ax.axvline(x=shocktime, color="purple", linestyle=":", label=f"shock time ({shocktime.strftime('%Y-%m-%d %H:%M')})")
 
-    # text labels
-    if has_peak:
-        ax.text(peak_time + timedelta(minutes=15),
-                peak_flux,
-                f"{peak_flux:.2E}/{peak_time.strftime('%H:%M')}/{best_viewing_pf}/"
-                f"{int(best_resample_pf.total_seconds()/60)} mins",
+
+def _draw_labels(ax, v: SimpleNamespace, bot_lim: float, top_lim: float, reference_channel: dict | None) -> None:
+    """Writes the labels of the peak flux, the onset (with its notes), the fluence, the data quality and the shocks"""
+    if v.has_peak:
+        ax.text(v.peak_time + timedelta(minutes=15),
+                v.peak_flux,
+                f"{v.peak_flux:.2E}/{v.peak_time.strftime('%H:%M')}/{v.viewing_pf}/"
+                f"{int(v.resample_pf.total_seconds()/60)} mins",
                 color="red")
     onset_notes = []
-    if onset_copied:
-        onset_notes.append(f"from {tool.reference_channel['mev']} {tool.reference_channel['particle']}")
-    if onset_at_bg_end:
+    if v.onset_copied:
+        onset_notes.append(f"from {reference_channel['mev']} {reference_channel['particle']}")
+    if v.onset_at_bg_end:
         onset_notes.append("at BG end")
-    ax.text(onset_time + timedelta(minutes=15),
+    ax.text(v.onset_time + timedelta(minutes=15),
             bot_lim * 10,
-            f"{onset_time.strftime('%Y-%m-%d %H:%M')}" + (f" ({', '.join(onset_notes)})" if onset_notes else ""),
+            f"{v.onset_time.strftime('%Y-%m-%d %H:%M')}" + (f" ({', '.join(onset_notes)})" if onset_notes else ""),
             color="green")
-    if has_fluence:
-        ax.text(fluence_start + abs(fluence_end - fluence_start)/2,
+    if v.has_fluence:
+        ax.text(v.fluence_start + abs(v.fluence_end - v.fluence_start)/2,
                 top_lim / 5,
-                f"{fluence:.2E}/{best_viewing_flu}/{int(best_resample_flu.total_seconds()/60)} mins",
+                f"{v.fluence:.2E}/{v.viewing_flu}/{int(v.resample_flu.total_seconds()/60)} mins",
                 color="brown",
                 horizontalalignment="center")
-    ax.text(flux.index[-1],
+    ax.text(v.flux.index[-1],
             bot_lim * (1 + (np.log10(top_lim) - np.log10(bot_lim)) / 8),
-            f"ratio={ratio:.2f}, #zeroes={n_zeroes}, #non-zeroes={ts_length-n_zeroes}",
+            f"ratio={v.ratio:.2f}, #zeroes={v.n_zeroes}, #non-zeroes={v.ts_length-v.n_zeroes}",
             horizontalalignment="right",
             verticalalignment="bottom")
-    for shocktime in shocktimes_in_plot:
+    for shocktime in v.shocktimes:
         ax.text(shocktime + timedelta(minutes=15),
                 bot_lim * 10,
                 f"{shocktime.strftime('%H:%M')}",
                 color="purple")
 
-    # extra ax parameters
+
+def _plot_channel(ax, tool, event_no: int, particle: str, sensor: str, mevlbl: str, ax_title_params: dict) -> None:
+    """Plots a channel group with an onset: the flux, background, onset, peak flux, fluence and shocks"""
+    v = _channel_values(tool, event_no, particle, sensor, mevlbl)
+    if v.onset_at_bg_end:
+        ax_title_params["color"] = "red"
+    ax.set_title(f"{mevlbl} {particle}/{sensor} ({v.viewing_ot} viewing, {int(v.resample_ot.total_seconds()/60)} mins "
+                 "resolution)", **ax_title_params)
+    bot_lim, top_lim = _axis_limits(v)
+    _draw_data(ax, v, bot_lim, top_lim, tool.params)
+    _draw_labels(ax, v, bot_lim, top_lim, tool.reference_channel)
     ax.set_ylim([bot_lim, top_lim])
-    ax.set_xlim([flux.index[0], flux.index[-1]])
+    ax.set_xlim([v.flux.index[0], v.flux.index[-1]])
 
 
 def plot_event(tool, event_no: int, filename: str | None = None) -> Figure:

@@ -640,10 +640,10 @@ class SEPPACT:
         """Writes the plot of each event to dir_plots"""
         from matplotlib import pyplot as plt
 
-        from .views import plot_event, plot_filename
+        from .views import event_plot_filename, plot_event
         os.makedirs(self.params.dir_plots, exist_ok=True)
         for event_no in self.df_optimals.index:
-            fig = plot_event(self, event_no, filename=plot_filename(self.params.dir_plots, event_no))
+            fig = plot_event(self, event_no, filename=pjoin(self.params.dir_plots, event_plot_filename(self, event_no)))
             plt.close(fig)
 
     def save_results(self) -> None:

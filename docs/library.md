@@ -90,7 +90,7 @@ After the steps, the results are attributes of the `SEPPACT` object:
 
 ## Plots
 
-`spearhead.sep_pact.views.plot_event(tool, event_no, filename=None)` returns the plot of one event as a matplotlib `Figure`, and saves it if a file name is given. `plot_filename(folder, event_no)` gives the file name used by `plot_events()`.
+`spearhead.sep_pact.views.plot_event(tool, event_no, filename=None)` returns the plot of one event as a matplotlib `Figure`, and saves it if a file name is given. `event_plot_filename(tool, event_no)` gives the file name that `plot_events()` uses in `dir_plots`.
 
 ```python
 from spearhead.sep_pact.views import plot_event
@@ -107,4 +107,4 @@ fig.savefig("event_20.pdf")
 | `inputs` | `read_shocks(path)` and `read_events(path, params)` |
 | `data` | `load_energies()`, `group_channels_de()`, `flux_cache_file()`, `download_data()` and `resample_flux()`: the EPD data, the flux of the channel groups and its cache |
 | `analysis` | `SEPPACT`, and the functions of the steps: `onset_detection_sigma()`, `quality_analysis()`, `detect_spikes()`, `remove_spikes()`, `get_peak_flux()`, `fluence_interval()`, `peak_search_end()` and `shocks_in_range()` |
-| `views` | `plot_event()` and `plot_filename()` |
+| `views` | `plot_event()` and `event_plot_filename()` |
