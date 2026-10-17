@@ -19,7 +19,7 @@
   - [Peak flux](#peak-flux-step)
   - [Fluence](#fluence-step)
 - [Results](#results)
-  - [optimals.xlsx](#optimalsxlsx)
+  - [results.csv](#resultscsv)
   - [Units](#units)
 - [Plots](#plots)
 
@@ -42,7 +42,7 @@ All the parameters are in the parameters cell at the top of the notebook, as the
 | `dir_saves` | `"intermediate_states"` | Folder of the cached flux |
 | `dir_plots` | `"plots"` | Folder of the plots, one per event |
 | `dir_outputs` | `"outputs"` | Folder of the result tables |
-| `file_events` | `"example.xlsx"` | [Event list](#event-list), in `dir_inputs` |
+| `file_events` | `"events_example.csv"` | [Event list](#event-list), in `dir_inputs` |
 | `file_shocks` | `"shocks.dat"` | [Shock list](#shock-list), in `dir_inputs` |
 
 ### Event windows
@@ -112,7 +112,13 @@ The default groups are:
 
 ### Event list
 
-An Excel file in `dir_inputs`, with one row per event (see `inputs/example.xlsx`):
+A CSV file in `dir_inputs`, with one row per event (see `inputs/events_example.csv`):
+
+```
+Event No,Onset Time,BG Start,BG End
+20,2021-11-01 02:05:00,2021-10-31 19:00:00,2021-11-01 01:30:00
+```
+
 
 | Column | Required | Description |
 |---|---|---|
@@ -122,7 +128,14 @@ An Excel file in `dir_inputs`, with one row per event (see `inputs/example.xlsx`
 | `BG End` | no | End of the background window; default `Onset Time` − `bg_end_before_onset` |
 | `End Time` | no | End of the event; default `Onset Time` + `end_after_onset` |
 
-The columns `BG Start`, `BG End` and `End Time` may be missing or have empty cells. The times are in UTC. The onset itself is always detected in the data, after `BG End`.
+The columns `BG Start`, `BG End` and `End Time` may be missing or have empty cells. The times are in UTC, as `YYYY-MM-DD HH:MM:SS` or `YYYY-MM-DD HH:MM` (ISO 8601). Spaces after the commas are allowed. The onset itself is always detected in the data, after `BG End`.
+
+Event lists in Excel (`.xlsx`), as in version 0.1.0, are no longer accepted. To convert one, save it as CSV in Excel or a spreadsheet program, or with pandas:
+
+```python
+import pandas as pd
+pd.read_excel("my_events.xlsx", index_col=0).to_csv("my_events.csv", date_format="%Y-%m-%d %H:%M:%S")
+```
 
 ### Shock list
 
@@ -141,7 +154,7 @@ Each step is one call of the `SEPPACT` object `tool`, created in the parameters 
 7. **Peak flux:** `tool.run_peaks()`; see [Peak flux](#peak-flux-step).
 8. **Fluence:** `tool.run_fluences()`; see [Fluence](#fluence-step).
 9. **Plots:** `tool.plot_events()` writes one plot per event to `dir_plots` (see [Plots](#plots)).
-10. **Tables:** `tool.save_results()` writes `optimals.xlsx` (see [Results](#results)).
+10. **Results:** `tool.save_results()` writes `results.csv` (see [Results](#results)).
 
 The results stay available as attributes of `tool`, e.g. `tool.df_optimals`; see the [library guide](library.md).
 
@@ -160,7 +173,7 @@ For each event, channel group, resolution and viewing:
 2. From `BG End` to `End Time`, the onset is the first of `onset_points` consecutive points above the threshold.
 3. The onset is then moved back to earlier points as long as each one is lower than the next, but not before `BG End`.
 
-A channel group of another particle than the reference channel (by default, a proton group) with no onset at a resolution and viewing takes the onset of the reference channel at the same resolution and viewing. This is marked as "Onset Copied" in `optimals.xlsx`.
+A channel group of another particle than the reference channel (by default, a proton group) with no onset at a resolution and viewing takes the onset of the reference channel at the same resolution and viewing. This is marked in the column `Onset Copied` of `results.csv`.
 
 Then, for each channel group, one onset is chosen. A resolution and viewing is used only if:
 - it has an onset;
@@ -192,28 +205,43 @@ The chosen fluence is the largest of the resolutions whose interval does not sta
 
 ## Results
 
-The tables are written to `dir_outputs`.
+The results are written to `dir_outputs`.
 
-### optimals.xlsx
+### results.csv
 
-The chosen results, one row per event. The columns have five levels: particle, sensor, channel group, quantity and field.
+The chosen results, one row per event and channel group, in the order of the event list and of `group_options`:
 
-| Quantity | Field | Description |
-|---|---|---|
-| `Onset Time` | `Onset Time` | Chosen onset |
-| | `Onset Copied` | `True` if the onset is the one of the reference channel (see [Onset](#onset-step)) |
-| | `Onset at BG End` | `True` if the onset is at the end of the background window: the rise may have started earlier |
-| | `Resolution` | Resolution of the onset, in minutes |
-| | `Viewing` | Viewing of the onset |
-| `Peak Flux` | `Peak Flux` | Chosen peak flux |
-| | `Peak Flux Time` | Time of the peak flux |
-| | `Resolution`, `Viewing` | Resolution (minutes) and viewing of the peak flux |
-| `Fluence` | `Fluence` | Chosen fluence |
-| | `Fluence Start`, `Fluence End` | Interval of the fluence |
-| | `Fluence Threshold` | Flux threshold that bounds the interval |
-| | `Resolution`, `Viewing` | Resolution (minutes) and viewing of the fluence |
+```
+Event No,Particle,Sensor,Energy Label,Low Energy,High Energy,Onset Time,Onset Resolution,Onset Viewing,...
+20,electrons,HET,1 MeV,0.4533,2.401,2021-11-01 01:50:00,2.0,north,...
+```
+
+| Column | Description |
+|---|---|
+| `Event No` | Event number of the event list |
+| `Particle`, `Sensor` | Particle (`electrons` or `protons`) and sensor of the channel group |
+| `Energy Label` | Name of the channel group in `group_options` |
+| `Low Energy`, `High Energy` | Energy range of the channel group: the low energy of its first channel and the high energy of its last channel |
+| `Onset Time` | Chosen onset |
+| `Onset Resolution`, `Onset Viewing` | Resolution and viewing of the onset |
+| `Onset Copied` | `True` if the onset is the one of the reference channel (see [Onset](#onset-step)) |
+| `Onset at BG End` | `True` if the onset is at the end of the background window: the rise may have started earlier |
+| `Peak Flux` | Chosen peak flux |
+| `Peak Flux Time` | Time of the peak flux |
+| `Peak Flux Resolution`, `Peak Flux Viewing` | Resolution and viewing of the peak flux |
+| `Fluence` | Chosen fluence |
+| `Fluence Start`, `Fluence End` | Interval of the fluence |
+| `Fluence Threshold` | Flux threshold that bounds the interval |
+| `Fluence Resolution`, `Fluence Viewing` | Resolution and viewing of the fluence |
 
 Empty cells mean that the channel group has no onset, peak flux or fluence for that event.
+
+The same results with one row per event, and the columns in five levels (particle, sensor, channel group, quantity and field), are `tool.df_optimals` (see the [library guide](library.md#results)). The file can be read with one row per event with pandas:
+
+```python
+results = pd.read_csv("outputs/results.csv")
+wide = results.set_index(["Event No", "Particle", "Sensor", "Energy Label"]).unstack(["Particle", "Sensor", "Energy Label"])
+```
 
 ### Units
 
@@ -222,7 +250,8 @@ Empty cells mean that the channel group has no onset, peak flux or fluence for t
 | Flux, peak flux, background level, thresholds | particles / (cm² s sr MeV) |
 | Fluence | particles / (cm² sr MeV) |
 | Times | UTC |
-| Resolutions in `optimals.xlsx` | minutes |
+| Energies | MeV |
+| Resolutions in `results.csv` | minutes |
 
 ## Plots
 

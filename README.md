@@ -23,7 +23,7 @@ SEP-PACT (Solar Energetic Particle Analysis and Calculation Tool) analyses Solar
 Each quantity is calculated at several time resolutions and in the four viewing directions of HET (sun, asun, north, south), and the tool chooses one result per channel group: the onset of the finest resolution with reliable data (the earliest of its viewings), the highest peak flux of the viewings at that resolution, and the largest fluence of the resolutions in the viewing of the peak.
 
 - **Inputs:** an event list (Excel file with the event onsets and, optionally, the background windows and end times) and the list of interplanetary shocks from the [ipshocks database](https://ipshocks.helsinki.fi/), provided in `inputs/shocks.dat`.
-- **Outputs:** one plot per event in `plots/`, and the results in `outputs/optimals.xlsx`: the chosen onset, peak flux and fluence of each channel group.
+- **Outputs:** one plot per event in `plots/`, and the results in `outputs/results.csv`: the chosen onset, peak flux and fluence of each event and channel group.
 - **Notebook:** `sep-pact.ipynb`, the whole analysis, from the parameters to the plots and tables, one cell per step.
 - **Package:** `spearhead.sep_pact`, the code of the analysis, also usable in scripts without the notebook.
 
@@ -45,7 +45,7 @@ You can access SEP-PACT online on the JupyterHub server of the SPEARHEAD project
 
 ## How to use
 
-1. Set the parameters in the parameters cell at the top of `sep-pact.ipynb`: the event list (`file_events`, a file in `inputs/`, by default `example.xlsx`), the event windows, the energy channel groups, the viewings, the resolutions and the parameters of the onset, spike, peak flux and fluence calculations.
+1. Set the parameters in the parameters cell at the top of `sep-pact.ipynb`: the event list (`file_events`, a CSV file in `inputs/`, by default `events_example.csv`), the event windows, the energy channel groups, the viewings, the resolutions and the parameters of the onset, spike, peak flux and fluence calculations.
 2. Run all the cells, in order.
 3. Find the plots in `plots/` and the results in `outputs/`.
 

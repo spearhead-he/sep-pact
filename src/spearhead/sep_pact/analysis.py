@@ -11,6 +11,26 @@ from .data import channel_layout, download_data, load_energies, resample_flux
 from .inputs import read_events, read_shocks
 
 
+# the columns of the results table, for the fields (quantity, field) of df_optimals
+RESULT_COLUMNS = {
+    ("Onset Time", "Onset Time"): "Onset Time",
+    ("Onset Time", "Resolution"): "Onset Resolution",
+    ("Onset Time", "Viewing"): "Onset Viewing",
+    ("Onset Time", "Onset Copied"): "Onset Copied",
+    ("Onset Time", "Onset at BG End"): "Onset at BG End",
+    ("Peak Flux", "Peak Flux"): "Peak Flux",
+    ("Peak Flux", "Peak Flux Time"): "Peak Flux Time",
+    ("Peak Flux", "Resolution"): "Peak Flux Resolution",
+    ("Peak Flux", "Viewing"): "Peak Flux Viewing",
+    ("Fluence", "Fluence"): "Fluence",
+    ("Fluence", "Fluence Start"): "Fluence Start",
+    ("Fluence", "Fluence End"): "Fluence End",
+    ("Fluence", "Fluence Threshold"): "Fluence Threshold",
+    ("Fluence", "Resolution"): "Fluence Resolution",
+    ("Fluence", "Viewing"): "Fluence Viewing",
+}
+
+
 def shocks_in_range(shocktimes: pd.Series, start: datetime, end: datetime) -> list[datetime]:
     """Returns the shock times from start to end"""
     shocks = shocktimes[(shocktimes >= start) & (shocktimes <= end)]
@@ -646,9 +666,32 @@ class SEPPACT:
             fig = plot_event(self, event_no, filename=pjoin(self.params.dir_plots, event_plot_filename(self, event_no)))
             plt.close(fig)
 
+    def group_energies(self, particle: str, sensor: str, mevlbl: str) -> tuple[float, float]:
+        """Returns the low and high energy (MeV) of a channel group: the low energy of its first channel and the high
+        energy of its last channel"""
+        channels = self.params.group_options[particle][mevlbl]["channels"]
+        energies = self.energies[sensor][particle]
+        low = energies.loc[channels[0], "Low Energy"]
+        high = energies.loc[channels[-1], "Low Energy"] + energies.loc[channels[-1], "Bin Width"]
+        # the shortest decimal form of the energies, which are float32 in EPD (23.12, not 23.1200008)
+        return float(str(low)), float(str(high))
+
+    def results_table(self) -> pd.DataFrame:
+        """Returns df_optimals as a long table: one row per event and channel group, with the resolutions in minutes"""
+        rows = []
+        for event_no in self.df_optimals.index:
+            for particle, sensor, mevlbl in self._iter_channels():
+                low, high = self.group_energies(particle, sensor, mevlbl)
+                row = {"Event No": event_no, "Particle": particle, "Sensor": sensor, "Energy Label": mevlbl,
+                       "Low Energy": low, "High Energy": high}
+                for (quantity, field), column in RESULT_COLUMNS.items():
+                    value = self.df_optimals.loc[event_no, (particle, sensor, mevlbl, quantity, field)]
+                    row[column] = value.total_seconds()/60 if isinstance(value, timedelta) else value
+                rows.append(row)
+        return pd.DataFrame(rows)
+
     def save_results(self) -> None:
-        """Writes optimals.xlsx (resolutions in minutes) to dir_outputs"""
+        """Writes results.csv, the long table of results_table(), to dir_outputs"""
         p = self.params
         os.makedirs(p.dir_outputs, exist_ok=True)
-        self.df_optimals.map(lambda x: x.total_seconds()/60 if not pd.isna(x) and type(x) is timedelta else x) \
-            .to_excel(pjoin(p.dir_outputs, "optimals.xlsx"))
+        self.results_table().to_csv(pjoin(p.dir_outputs, "results.csv"), index=False, date_format="%Y-%m-%d %H:%M:%S")

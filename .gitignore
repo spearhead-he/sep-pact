@@ -155,9 +155,10 @@ data/*
 !data/.gitkeep
 outputs/*
 !outputs/.gitkeep
+# event lists, except the examples
 inputs/*.csv
+!inputs/*_example.csv
 
-# Excel files, except the example inputs
+# Excel files
 *.xlsx
-!inputs/example*.xlsx
 plots/*.png

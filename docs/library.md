@@ -25,7 +25,7 @@ pip install -e .
 ```python
 from spearhead.sep_pact import SEPPACT, SEPPACT_parameters
 
-params = SEPPACT_parameters(file_events="example.xlsx")
+params = SEPPACT_parameters(file_events="events_example.csv")
 tool = SEPPACT(params)
 tool.run_inputs()
 tool.run_data()
@@ -39,7 +39,7 @@ tool.save_results()
 print(tool.df_optimals)
 ```
 
-The script reads `inputs/example.xlsx` and `inputs/shocks.dat`, writes the plots to `plots/` and the tables to `outputs/`, relative to the working folder.
+The script reads `inputs/events_example.csv` and `inputs/shocks.dat`, writes the plots to `plots/` and the tables to `outputs/`, relative to the working folder.
 
 ## Parameters
 
@@ -48,7 +48,7 @@ The script reads `inputs/example.xlsx` and `inputs/shocks.dat`, writes the plots
 ```python
 from datetime import timedelta
 
-params = SEPPACT_parameters(file_events="my_events.xlsx", onset_sigma=3)
+params = SEPPACT_parameters(file_events="my_events.csv", onset_sigma=3)
 params.resample_freqs = [timedelta(minutes=5), timedelta(minutes=30)]
 params.spike_thresholds = {timedelta(minutes=5): 2.0, timedelta(minutes=30): 3.0}
 params.check()
@@ -72,7 +72,7 @@ params.check()
 | `run_peaks()` | Finds the peak flux of every resolution and viewing (`calculate_peaks()`), and chooses one (`select_peaks()`) |
 | `run_fluences()` | Calculates the fluence of every resolution (`calculate_fluences()`), and chooses one (`select_fluences()`) |
 | `plot_events()` | Writes one plot per event to `dir_plots` |
-| `save_results()` | Writes `optimals.xlsx` to `dir_outputs` |
+| `save_results()` | Writes `results.csv`, the table of `results_table()`, to `dir_outputs` |
 
 ## Results
 
@@ -85,8 +85,15 @@ After the steps, the results are attributes of the `SEPPACT` object:
 | `dfs_flux` | The flux of the channel groups: `dfs_flux[particle][sensor][resolution]` is a DataFrame indexed by event number and time, with the columns (viewing, group) |
 | `dfs_events` | The results of every resolution and viewing: `dfs_events[particle][sensor][resolution]` is a DataFrame indexed by event number, with the columns (viewing, group, quantity) |
 | `spikes` | The spike times: `spikes[particle][sensor][resolution][viewing][group][event_no]` |
-| `df_optimals` | The chosen results (as `optimals.xlsx`, with the resolutions as `timedelta`); see [optimals.xlsx](user_guide.md#optimalsxlsx) |
+| `df_optimals` | The chosen results, one row per event, with the columns (particle, sensor, group, quantity, field) and the resolutions as `timedelta` |
 | `df_ts_quality` | The data quality of the chosen onset: the number of points, of zero or NaN values, and the ratio of transitions to them |
+
+`tool.results_table()` returns `df_optimals` as the long table of `results.csv`: one row per event and channel group, with the energy range of the group and the resolutions in minutes (see [results.csv](user_guide.md#resultscsv)). `tool.group_energies(particle, sensor, group)` returns the low and high energy of a channel group, in MeV.
+
+```python
+results = tool.results_table()
+protons = results[results["Particle"] == "protons"]
+```
 
 ## Plots
 
