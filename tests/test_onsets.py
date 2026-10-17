@@ -17,15 +17,16 @@ def series(values, start=T0, step=MINUTE) -> pd.Series:
 
 def test_onset_is_the_start_of_the_rise():
     s = series([1, 1, 1, 1, 1, 3, 10, 10, 10, 10])
-    onset, levels = onset_detection_sigma(s, s=2, n=3, bg_start=s.index[0], bg_end=s.index[3])
+    onset, bg_start, bg_end, levels = onset_detection_sigma(s, s=2, n=3, bg_start=s.index[0], bg_end=s.index[3])
     # 3 is the first point above the threshold, and the walk back stops at the last background point
     assert onset == s.index[4]
+    assert (bg_start, bg_end) == (s.index[0], s.index[3])
     assert levels == {"bg_level": 1.0, "threshold": 1.0}
 
 
 def test_no_onset_below_the_threshold():
     s = series([1, 2, 1, 2, 1, 2, 1, 2, 1, 2])
-    onset, levels = onset_detection_sigma(s, s=2, n=3, bg_start=s.index[0], bg_end=s.index[3])
+    onset, bg_start, bg_end, levels = onset_detection_sigma(s, s=2, n=3, bg_start=s.index[0], bg_end=s.index[3])
     assert onset is None
     assert levels["bg_level"] == pytest.approx(1.5)
     assert levels["threshold"] == pytest.approx(1.5 + 2 * np.std([1, 2, 1, 2], ddof=1))
@@ -33,20 +34,21 @@ def test_no_onset_below_the_threshold():
 
 def test_onset_needs_n_consecutive_points():
     s = series([1, 1, 1, 1, 10, 10, 1, 1, 10, 10, 10, 10])
-    onset, _ = onset_detection_sigma(s, s=2, n=3, bg_start=s.index[0], bg_end=s.index[3])
+    onset, _, _, _ = onset_detection_sigma(s, s=2, n=3, bg_start=s.index[0], bg_end=s.index[3])
     assert onset == s.index[7]
 
 
 def test_onset_walk_back_stops_at_the_end_of_the_background():
     s = series([0.5, 0.5, 0.5, 1, 2, 3, 4, 5])
-    onset, _ = onset_detection_sigma(s, s=2, n=3, bg_start=s.index[0], bg_end=s.index[3])
+    onset, _, _, _ = onset_detection_sigma(s, s=2, n=3, bg_start=s.index[0], bg_end=s.index[3])
     assert onset == s.index[3]
 
 
 def test_onset_with_background_given_as_positions():
     s = series([1, 1, 1, 1, 1, 3, 10, 10, 10, 10])
-    onset, _ = onset_detection_sigma(s, s=2, n=3, bg_start=0, bg_end=3)
+    onset, bg_start, bg_end, _ = onset_detection_sigma(s, s=2, n=3, bg_start=0, bg_end=3)
     assert onset == s.index[4]
+    assert (bg_start, bg_end) == (s.index[0], s.index[3])
 
 
 def test_quality_ratio_of_transitions_to_zero_or_nan():

@@ -6,7 +6,7 @@ import pytest
 from matplotlib.figure import Figure
 from matplotlib.text import Text
 
-from spearhead.sep_pact.views import plot_event, plot_filename
+from spearhead.sep_pact.views import event_plot_filename, plot_event
 from tests.helpers import T0, VIEWINGS, FakeEPD, image_compare, synthetic_tool
 
 
@@ -23,9 +23,9 @@ def run(tool):
     return tool
 
 
-def test_plot_filename():
-    assert plot_filename("plots", 7) == os.path.join("plots", "event_007.png")
-    assert plot_filename("plots", 1234) == os.path.join("plots", "event_1234.png")
+def test_event_plot_filename():
+    assert event_plot_filename(None, 7) == "event_007.png"
+    assert event_plot_filename(None, 1234) == "event_1234.png"
 
 
 def test_plot_event_returns_a_figure_and_saves_it(tmp_path, monkeypatch):
