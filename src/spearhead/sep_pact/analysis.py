@@ -23,48 +23,67 @@ def peak_search_end(onset: datetime, enddate: datetime, peak_window_min: timedel
     return middle if abs(middle - onset) >= peak_window_min else enddate
 
 
+def _bg_times(series: pd.Series, bg_start, bg_end) -> tuple:
+    """The background start and end as times, also when given as point indices"""
+    if isinstance(bg_start, (int, np.integer)):
+        bg_start = series.index[bg_start]
+    if isinstance(bg_end, (int, np.integer)):
+        bg_end = series.index[bg_end]
+    return bg_start, bg_end
+
+
+def _first_run_above(series: pd.Series, threshold: float, n: int):
+    """Returns the time of the first of n consecutive points above the threshold, or None"""
+    streak = 0
+    start = None
+    for index, value in series.items():
+        if value > threshold:
+            streak += 1
+            if start is None:
+                start = index
+            if streak >= n:
+                return start
+        else:
+            streak = 0
+            start = None
+    return None
+
+
+def _walk_back(series: pd.Series, onset_time):
+    """Returns the earliest time before onset_time reached while each earlier point is lower than the next one"""
+    onset_value = series.loc[onset_time]
+    for index, value in series.loc[:onset_time - timedelta(milliseconds=1)].iloc[::-1].items():
+        if value < onset_value:
+            onset_time = index
+            onset_value = value
+        else:
+            break
+    return onset_time
+
+
 def onset_detection_sigma(series: pd.Series,
                           s: float,
                           n: int,
                           bg_start: int | datetime,
                           bg_end: int | datetime) -> tuple:
-    """Returns the onset time (None if no event is detected) and a dict with the background level and the threshold"""
-    if type(bg_start) is int:
-        bg_start = series.index[bg_start]
-    if type(bg_end) is int:
-        bg_end = series.index[bg_end]
+    """Returns the onset time (None if no event is detected), the background start and end, and a dict with the
+    background level and the threshold
+
+    The threshold is the background mean plus s standard deviations. After the background, the first of n consecutive
+    points above the threshold is found, and the onset is moved back to earlier points while each one is lower than
+    the next, but not before the end of the background.
+    """
+    bg_start, bg_end = _bg_times(series, bg_start, bg_end)
     bg_level = (bg_series := series[bg_start:bg_end]).mean()
     threshold = bg_level + s * bg_series.std()
-    onset_time = None
     data_series = series[bg_end:]
-
-    streak = 0
-    for index, value in data_series.items():
-        if value > threshold:
-            streak += 1
-            if onset_time is None:
-                onset_time = index
-        else:
-            streak = 0
-            onset_time = None
-
-        if streak >= n:
-            break
-
-    if streak < n:
-        onset_time = None
-
+    onset_time = _first_run_above(data_series, threshold, n)
     if onset_time is not None:
-        onset_value = data_series.loc[onset_time]
-        for index, value in data_series.loc[:onset_time - timedelta(milliseconds=1)].iloc[::-1].items():
-            if value < onset_value:
-                onset_time = index
-                onset_value = value
-            else:
-                break
-
+        onset_time = _walk_back(data_series, onset_time)
     return (
         onset_time,
+        bg_start,
+        bg_end,
         {"bg_level": bg_level, "threshold": threshold},
     )
 
@@ -138,6 +157,52 @@ def get_peak_flux(series: pd.Series) -> tuple[float, datetime]:
     return peak_flux, peak_time
 
 
+def _peak_point(ts: pd.Series, peak_time: datetime) -> tuple:
+    """Returns the flux and time of the higher of the points just before and after peak_time"""
+    before = ts.loc[:peak_time]
+    after = ts.loc[peak_time:]
+    if before.empty:
+        return after.values[0], after.index[0]
+    if after.empty or before.values[-1] > after.values[0]:
+        return before.values[-1], before.index[-1]
+    return after.values[0], after.index[0]
+
+
+def _interval_start(ts: pd.Series, peak_time: datetime, threshold: float, points: int):
+    """Returns the last of the nearest run of points consecutive points at or below the threshold before the peak,
+    with fewer points if there is none, or None"""
+    for needed_points in range(points, 0, -1):
+        n = 0
+        for j in range(len(ts.loc[:peak_time]) - 1, -1, -1):
+            if ts.iloc[j] <= threshold:
+                n += 1
+                if n == needed_points:
+                    return ts.index[j + (needed_points - 1)]
+            else:
+                n = 0
+    return None
+
+
+def _interval_end(ts: pd.Series, peak_time: datetime, threshold: float, points: int):
+    """Returns the first of the nearest run of points consecutive points at or below the threshold after the peak,
+    with fewer points if there is none, or None"""
+    after = ts.loc[peak_time:]
+    if after.empty:
+        # due to resolution differences, the peak flux point can be beyond the end of the series
+        return None
+    first = list(ts.index).index(after.index[0])
+    for needed_points in range(points, 0, -1):
+        n = 0
+        for j, v in enumerate(after, start=first):
+            if v <= threshold:
+                n += 1
+                if n == needed_points:
+                    return ts.index[j - (needed_points - 1)]
+            else:
+                n = 0
+    return None
+
+
 def fluence_interval(ts: pd.Series,
                      onset: datetime,
                      peak_time: datetime,
@@ -151,64 +216,12 @@ def fluence_interval(ts: pd.Series,
     below the threshold (or of single points) before and after the peak, and starts at the onset at the earliest.
     The fluence is the integral of the flux over the interval, over time in seconds.
     """
-    pft = peak_time
-    pf_temp1 = None
-    pft_temp1 = None
-    pf_temp2 = None
-    pft_temp2 = None
-    if not ts.loc[:pft].empty:
-        pf_temp1 = ts.loc[:pft].values[-1]
-        pft_temp1 = ts.loc[:pft].index[-1]
-    if not ts.loc[pft:].empty:
-        pf_temp2 = ts.loc[pft:].values[0]
-        pft_temp2 = ts.loc[pft:].index[0]
-    if pf_temp1 is None:
-        pf = pf_temp2
-        pft = pft_temp2
-    elif pf_temp2 is None:
-        pf = pf_temp1
-        pft = pft_temp1
-    else:
-        if pf_temp1 > pf_temp2:
-            pf = pf_temp1
-            pft = pft_temp1
-        else:
-            pf = pf_temp2
-            pft = pft_temp2
-    fluence_start = None
-    fluence_end = None
-    threshold = pf * peak_fraction
-    needed_points = points
-    while fluence_start is None and needed_points > 0:
-        n = 0
-        for j in range(len(ts.loc[:pft]) - 1, -1, -1):
-            v = ts.iloc[j]
-            if v <= threshold:
-                n += 1
-                if n == needed_points:
-                    fluence_start = ts.index[j + (needed_points - 1)]
-                    break
-            else:
-                n = 0
-        needed_points -= 1
+    peak_flux, peak_time = _peak_point(ts, peak_time)
+    threshold = peak_flux * peak_fraction
+    fluence_start = _interval_start(ts, peak_time, threshold, points)
     if fluence_start is None or fluence_start < onset:
         fluence_start = onset
-    needed_points = points
-    while fluence_end is None and needed_points > 0:
-        n = 0
-        try:
-            for j, v in enumerate(ts.loc[pft:], start=list(ts.index).index(ts.loc[pft:].index[0])):
-                if v <= threshold:
-                    n += 1
-                    if n == needed_points:
-                        fluence_end = ts.index[j - (needed_points - 1)]
-                        break
-                else:
-                    n = 0
-            needed_points -= 1
-        except IndexError:
-            # Due to resolution differences, the peak flux point is beyond the end of the timeseries
-            break
+    fluence_end = _interval_end(ts, peak_time, threshold, points)
     if fluence_end is None or fluence_end > ts.index[-1]:
         fluence_end = enddate
 
@@ -320,8 +333,8 @@ class SEPPACT:
                                                           bg_start=self.events.loc[i, "BG Start"],
                                                           bg_end=self.events.loc[i, "BG End"])
                             row[(*series.name, "Onset Time")] = onset[0]
-                            row[(*series.name, "BG Level")] = onset[1]["bg_level"]
-                            row[(*series.name, "Threshold")] = onset[1]["threshold"]
+                            row[(*series.name, "BG Level")] = onset[3]["bg_level"]
+                            row[(*series.name, "Threshold")] = onset[3]["threshold"]
                         rows[i] = row
                     dfs_events[particle][sensor][resample_freq] = pd.DataFrame.from_dict(rows, orient="index")
 
