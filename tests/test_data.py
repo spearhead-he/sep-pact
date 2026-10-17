@@ -8,8 +8,8 @@ import pytest
 
 import spearhead.sep_pact.data as data
 from spearhead.sep_pact.conf import default_group_options
-from spearhead.sep_pact.data import (channel_layout, download_data, flux_cache_file, group_channels_de, load_energies,
-                                     resample_flux)
+from spearhead.sep_pact.data import (ParticleData, channel_layout, download_data, flux_cache_file, group_channels_de, load,
+                                     load_energies, resample_flux)
 from spearhead.sep_pact.inputs import read_events
 from tests.helpers import OFFSET, T0, FakeEPD, epd_energies, make_params, profile, write_events
 
@@ -36,11 +36,35 @@ def test_group_channels_weighted_by_energy_width():
     assert grouped["high"].tolist() == pytest.approx([5.0, 5.0])
 
 
-def test_load_energies_names_the_proton_keys_like_the_flux(monkeypatch):
+def test_load_returns_the_flux_and_energies_of_each_channel(monkeypatch):
+    monkeypatch.setattr(data, "epd_load", FakeEPD({("protons", "sun"): T0}))
+    loaded = load("HET", T0, T0, "sun", "data")
+    assert list(loaded) == ["protons", "electrons"]
+    protons = loaded["protons"]
+    assert isinstance(protons, ParticleData)
+    assert list(protons.flux.columns) == list(range(36))  # only the flux, with the channel numbers as columns
+    assert list(protons.energies.columns) == ["Low Energy", "Bin Width"]
+    assert protons.energies.loc[3, "Bin Width"] == pytest.approx(epd_energies()["H_Bins_Width"][3])
+    assert protons.flux[5].max() > 50
+
+
+def test_load_selected_particles(monkeypatch):
+    monkeypatch.setattr(data, "epd_load", FakeEPD())
+    assert list(load("HET", T0, T0, "sun", "data", particles=["electrons"])) == ["electrons"]
+
+
+def test_load_ion_columns(monkeypatch):
     monkeypatch.setattr(data, "epd_load", FakeEPD(proton_prefix="Ion"))
+    protons = load("HET", T0, T0, "sun", "data")["protons"]
+    assert list(protons.flux.columns) == list(range(36))
+    assert protons.energies.loc[0, "Low Energy"] == pytest.approx(epd_energies("Ion")["Ion_Bins_Low_Energy"][0])
+
+
+def test_load_energies(monkeypatch):
+    monkeypatch.setattr(data, "epd_load", FakeEPD())
     energies = load_energies({"HET"}, "l2", T0, T0, "sun", "data")
-    assert "H_Bins_Width" in energies["HET"] and "Ion_Bins_Width" not in energies["HET"]
-    assert energies["HET"]["H_Bins_Width"] == pytest.approx(epd_energies()["H_Bins_Width"])
+    assert list(energies) == ["HET"] and list(energies["HET"]) == ["protons", "electrons"]
+    assert energies["HET"]["electrons"]["Bin Width"].tolist() == pytest.approx(epd_energies()["Electron_Bins_Width"])
 
 
 def test_flux_cache_file_depends_on_the_settings(events, tmp_path):
@@ -56,8 +80,16 @@ def test_flux_cache_file_depends_on_the_settings(events, tmp_path):
     assert flux_cache_file(later, "l2", ["sun"], default_group_options(), "cache") != name
 
 
+def energy_tables() -> dict:
+    """Returns the energies of the fake loader in the form of load_energies(), without calling the loader"""
+    energies = epd_energies()
+    return {"HET": {particle: pd.DataFrame({"Low Energy": energies[f"{prefix}_Bins_Low_Energy"],
+                                            "Bin Width": energies[f"{prefix}_Bins_Width"]})
+                    for particle, prefix in (("protons", "H"), ("electrons", "Electron"))}}
+
+
 def download(events, tmp_path, **kwargs):
-    return download_data(events, "l2", ["sun", "north"], default_group_options(), {"HET": epd_energies()}, "data",
+    return download_data(events, "l2", ["sun", "north"], default_group_options(), energy_tables(), "data",
                          str(tmp_path), 2, **kwargs)
 
 

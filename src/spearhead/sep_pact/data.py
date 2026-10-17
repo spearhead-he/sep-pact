@@ -1,18 +1,67 @@
-"""Loading of the Solar Orbiter EPD data: channel energies, flux of the channel groups, cache and resampling"""
+"""Loading of the Solar Orbiter EPD data: channel energies, flux of the channel groups, cache and resampling
+
+load() returns the data in the form of the observers of the VDA tool: for each particle, the flux with the channel
+numbers as columns and the energies of the channels.
+"""
 import hashlib
 import json
 from datetime import datetime, timedelta
 from os.path import exists as pexists
 from os.path import join as pjoin
+from typing import NamedTuple
 
 import pandas as pd
 from solo_epd_loader import epd_load
 
-# prefix of the flux columns of each particle in the EPD data
+# prefix of the flux columns of each particle in the EPD data; the protons of EPT are "Ion"
 PARTICLE_PREFIX = {
     "protons": "H",
     "electrons": "Electron"
 }
+
+
+class ParticleData(NamedTuple):
+    # Flux with the channel numbers as columns
+    flux: pd.DataFrame
+    # "Low Energy" and "Bin Width" (MeV) of each channel number
+    energies: pd.DataFrame
+
+
+def load(sensor: str,
+         startdate: datetime,
+         enddate: datetime,
+         viewing: str,
+         path: str,
+         particles: list[str] | None = None,
+         level: str = "l2") -> dict[str, ParticleData]:
+    """Returns the EPD data of each particle (all by default) as ParticleData, downloaded if they are not in path
+
+    Raises ValueError if there are no data for the period.
+    """
+    df_protons, df_electrons, energies = epd_load(sensor=sensor,
+                                                  level=level,
+                                                  startdate=startdate,
+                                                  enddate=enddate,
+                                                  viewing=viewing,
+                                                  path=path,
+                                                  autodownload=True)
+    data = {}
+    for particle, df_particle in (("protons", df_protons), ("electrons", df_electrons)):
+        if particles is not None and particle not in particles:
+            continue
+        prefix = PARTICLE_PREFIX[particle]
+        if particle == "protons" and f"{prefix}_Flux" not in df_particle.columns.get_level_values(0):
+            prefix = "Ion"
+        flux = df_particle[f"{prefix}_Flux"]
+        # e.g. "H_Flux_12" is channel 12
+        flux = flux.set_axis([int(c.rsplit("_", 1)[1]) for c in flux.columns], axis="columns")
+        data[particle] = ParticleData(
+            flux,
+            pd.DataFrame({"Low Energy": energies[f"{prefix}_Bins_Low_Energy"],
+                          "Bin Width": energies[f"{prefix}_Bins_Width"]},
+                         index=flux.columns),
+        )
+    return data
 
 
 def channel_layout(group_options: dict) -> tuple[list[str], dict, dict, set]:
@@ -46,23 +95,13 @@ def load_energies(sensors: set,
                   enddate: datetime,
                   viewing: str,
                   path: str) -> dict:
-    """Returns the channel energies of each sensor, with the proton keys named like the flux columns ("H")
+    """Returns the channel energies of each sensor and particle ("Low Energy" and "Bin Width" of each channel number)
 
     The energies are read for one period and viewing, as they are assumed not to change with either.
     """
-    energies = {}
-    for sensor in sensors:
-        _, _, energies[sensor] = epd_load(sensor=sensor,
-                                          level=level,
-                                          startdate=startdate,
-                                          enddate=enddate,
-                                          viewing=viewing,
-                                          path=path,
-                                          autodownload=True)
-        for key in list(energies[sensor].keys()):
-            if "Ion" in key:
-                energies[sensor][key.replace("Ion", PARTICLE_PREFIX["protons"])] = energies[sensor].pop(key)
-    return energies
+    return {sensor: {particle: particle_data.energies
+                     for particle, particle_data in load(sensor, startdate, enddate, viewing, path, level=level).items()}
+            for sensor in sensors}
 
 
 def group_channels_de(df_to_group: pd.DataFrame,
@@ -97,6 +136,57 @@ def flux_cache_file(events: pd.DataFrame,
     return pjoin(folder, f"dfs_flux_{level}_{key}.pkl")
 
 
+def _load_with_retries(row: pd.Series,
+                       sensor: str,
+                       level: str,
+                       viewing: str,
+                       path: str,
+                       tries_max: int) -> tuple[dict, datetime, datetime]:
+    """Returns the data of an event and the period they were loaded for
+
+    The first try loads the period of data of the event (Plot Start to Plot End), the next ones only the background
+    start to the end time. The error of the last try is raised.
+    """
+    tries = 0
+    data = {}
+    startdate = row["Plot Start"]
+    enddate = row["Plot End"]
+    while len(data) == 0 and tries < tries_max:
+        try:
+            tries += 1
+            data = load(sensor, startdate, enddate, viewing, path, level=level)
+        except ValueError:
+            if tries >= tries_max:
+                raise
+            print("\n", sensor, level, startdate, enddate, viewing)
+            startdate = row["BG Start"]
+            enddate = row["End Time"]
+            print("Retrying with shortened time range\n", sensor, level, startdate, enddate, viewing)
+    if len(data) == 0:
+        print("FAILED/No Data\n", sensor, level, startdate, enddate, viewing)
+    return data, startdate, enddate
+
+
+def _group_event_flux(particle_data: ParticleData,
+                      startdate: datetime,
+                      enddate: datetime,
+                      groups: dict,
+                      widths: pd.Series) -> pd.DataFrame:
+    """Returns the flux of the channel groups ({label: spec}) of one sensor in the period, at whole seconds"""
+    flux = particle_data.flux[startdate:enddate]
+    flux.index = flux.index.map(lambda x: x.replace(microsecond=0, nanosecond=0))
+    return group_channels_de(flux,
+                             [spec["channels"] for spec in groups.values()],
+                             [[widths[channel] for channel in spec["channels"]] for spec in groups.values()],
+                             list(groups))
+
+
+def _add_flux(frames: pd.DataFrame, new: pd.DataFrame) -> pd.DataFrame:
+    """Returns the flux of the frames with the new flux added, summing the values of duplicate times"""
+    frames = new.copy() if frames.empty else pd.concat([frames, new], axis="index")
+    return frames.groupby(level=[0, 1]).sum(min_count=1).sort_index()
+
+
 def download_data(events: pd.DataFrame,
                   level: str,
                   viewings: list[str],
@@ -112,107 +202,35 @@ def download_data(events: pd.DataFrame,
         if pexists(cache_file):
             print(f"Loading the flux DataFrames from {cache_file}.")
             return pd.read_pickle(cache_file)
-        else:
-            print(f"{cache_file} does not exist. Proceeding with download.")
-    particles, sensors, channels, sensors_all = channel_layout(group_options)
-    dfs_flux = {
-        particle: {
-            sensor: {"no_resample": pd.DataFrame([])}
-            for sensor in sensors[particle]
-        }
-        for particle in particles
-    }
+        print(f"{cache_file} does not exist. Proceeding with download.")
+    particles, sensors, _, sensors_all = channel_layout(group_options)
+    dfs_flux = {particle: {sensor: {"no_resample": pd.DataFrame([])} for sensor in sensors[particle]}
+                for particle in particles}
     print(f"Downloading {level} data...")
-    total_events = len(events)
     for event_no, row in events.iterrows():
-        dfs_cur_event = {
-            particle: {
-                sensor: {"no_resample": pd.DataFrame([])}
-                for sensor in sensors[particle]
-            }
-            for particle in particles
-        }
+        current = {particle: {sensor: pd.DataFrame([]) for sensor in sensors[particle]} for particle in particles}
         print(f"Event {event_no}", end="... ")
         for viewing in viewings:
             for sensor in sensors_all:
-                tries = 0
-                df_flux_cur_event = {}
-                plot_startdate = row["Plot Start"]
-                plot_enddate = row["Plot End"]
-                while len(df_flux_cur_event) == 0 and tries < tries_max:
-                    try:
-                        tries += 1
-                        df_flux_cur_event["protons"], df_flux_cur_event["electrons"], _ = epd_load(sensor=sensor,
-                                                                                                   level=level,
-                                                                                                   startdate=plot_startdate,
-                                                                                                   enddate=plot_enddate,
-                                                                                                   viewing=viewing,
-                                                                                                   path=path,
-                                                                                                   autodownload=True)
-                        # Unify column names for protons. They can originally be "Ion" or "H"
-                        df_flux_cur_event["protons"].columns = pd.MultiIndex.from_tuples(
-                            [tuple([name.replace("Ion", PARTICLE_PREFIX["protons"]) for name in i])
-                             for i in df_flux_cur_event["protons"].columns])
-                    except ValueError:
-                        if tries >= tries_max:
-                            raise
-                        print("\n", sensor, level, plot_startdate, plot_enddate, viewing)
-                        plot_startdate = row["BG Start"]
-                        plot_enddate = row["End Time"]
-                        print("Retrying with shortened time range\n", sensor, level, plot_startdate, plot_enddate, viewing)
-                if len(df_flux_cur_event) == 0:
-                    print("FAILED/No Data\n", sensor, level, plot_startdate, plot_enddate, viewing)
-
+                data, startdate, enddate = _load_with_retries(row, sensor, level, viewing, path, tries_max)
                 for particle in particles:
-                    # Keep only the needed columns
-                    try:
-                        wanted_channels = channels[particle][sensor]
-                    except KeyError:
+                    groups = {label: spec for label, spec in group_options[particle].items() if spec["sensor"] == sensor}
+                    if not groups:
                         continue
-                    prefix = PARTICLE_PREFIX[particle]
-                    wanted_columns = [multicol
-                                      for multicol in df_flux_cur_event[particle].columns
-                                      if any([f"{prefix}_Flux" in col for col in multicol])
-                                      and any([f"{prefix}_Flux_{ch}" == col for ch in wanted_channels for col in multicol])]
-                    unwanted_columns = set(df_flux_cur_event[particle].columns).difference(set(wanted_columns))
-                    df_flux_cur_event[particle].drop(columns=unwanted_columns, inplace=True)
-
-                    # Add the values to the current event dataframes
-                    if len(df_flux_cur_event[particle].columns) > 0:
-                        df_temp = df_flux_cur_event[particle][plot_startdate:plot_enddate]
-                        df_temp.columns = df_temp.columns.droplevel(0)
-                        df_temp.index = df_temp.index.map(lambda x: x.replace(microsecond=0, nanosecond=0))
-
-                        # group energy channels
-                        specs = [(mevlbl, mev_specs) for mevlbl, mev_specs in group_options[particle].items()
-                                 if mev_specs["sensor"] == sensor]
-                        groups = [[f"{prefix}_Flux_{channel}" for channel in mev_specs["channels"]] for _, mev_specs in specs]
-                        widths = energies[sensor][f"{prefix}_Bins_Width"]
-                        energy_bins_widths = [[widths[channel] for channel in mev_specs["channels"]] for _, mev_specs in specs]
-                        names = [mevlbl for mevlbl, _ in specs]
-                        df_temp = group_channels_de(df_temp, groups, energy_bins_widths, names)
-
-                        # Add multiindices
-                        df_temp = pd.concat({event_no: df_temp}, axis="index")
-                        df_temp = pd.concat({viewing: df_temp}, axis="columns")
-                        df_temp.index.names = ["Event No", "Datetime"]
-
-                        # Add the values to the current event dataframes
-                        current = dfs_cur_event[particle][sensor]["no_resample"]
-                        current = df_temp.copy() if current.empty else pd.concat([current, df_temp], axis="index")
-                        # Remove duplicate indices by grouping
-                        current = current.groupby(level=[0, 1]).sum(min_count=1)
-                        dfs_cur_event[particle][sensor]["no_resample"] = current.sort_index()
+                    df_temp = _group_event_flux(data[particle], startdate, enddate, groups,
+                                                energies[sensor][particle]["Bin Width"])
+                    df_temp = pd.concat({viewing: pd.concat({event_no: df_temp}, axis="index")}, axis="columns")
+                    df_temp.index.names = ["Event No", "Datetime"]
+                    current[particle][sensor] = _add_flux(current[particle][sensor], df_temp)
 
         # Add the current event dataframes to the main dataframes
         for particle in particles:
             for sensor in sensors[particle]:
-                current = dfs_cur_event[particle][sensor]["no_resample"]
-                dfs_flux[particle][sensor]["no_resample"] = current.copy() \
-                    if dfs_flux[particle][sensor]["no_resample"].empty \
-                    else pd.concat([dfs_flux[particle][sensor]["no_resample"], current], axis="index")
+                previous = dfs_flux[particle][sensor]["no_resample"]
+                dfs_flux[particle][sensor]["no_resample"] = current[particle][sensor].copy() if previous.empty \
+                    else pd.concat([previous, current[particle][sensor]], axis="index")
 
-        print(f"Downloaded/Loaded ({event_no/total_events*100:.2f}%)")
+        print(f"Downloaded/Loaded ({event_no/len(events)*100:.2f}%)")
     pd.to_pickle(dfs_flux, cache_file)
     return dfs_flux
 
