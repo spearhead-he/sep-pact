@@ -104,3 +104,11 @@ def test_seppact_checks_the_parameters():
     p.resample_freqs = [timedelta(minutes=15)]
     with pytest.raises(ValueError, match="no threshold"):
         SEPPACT(p)
+
+
+def test_removed_parameter_fails_with_its_replacement(monkeypatch):
+    import spearhead.sep_pact.conf as conf
+    monkeypatch.setitem(conf.REMOVED_PARAMETERS, "old_name", ("0.2.0", "Use new_name instead."))
+    p = SEPPACT_parameters()
+    with pytest.raises(AttributeError, match="The old_name parameter was removed in 0.2.0. Use new_name instead."):
+        p.old_name = 1

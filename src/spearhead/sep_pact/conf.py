@@ -44,6 +44,10 @@ def default_spike_thresholds() -> dict:
     }
 
 
+# Removed parameters: {name: (version, what to use instead)}
+REMOVED_PARAMETERS = {}
+
+
 @dataclass
 class SEPPACT_parameters:
     """Parameters of the analysis
@@ -104,40 +108,65 @@ class SEPPACT_parameters:
     fallback_viewing: str = "sun"              # viewing shown, at the coarsest resolution, for channels without an onset
 
     def __setattr__(self, name: str, value) -> None:
+        # catches removed parameters and typos, which would otherwise be silently ignored
+        if name in REMOVED_PARAMETERS:
+            version, replacement = REMOVED_PARAMETERS[name]
+            raise AttributeError(f"The {name} parameter was removed in {version}. {replacement}")
         names = [f.name for f in fields(self)]
         if name not in names:
             raise AttributeError(f"SEPPACT_parameters has no parameter {name!r}. The parameters are: {', '.join(names)}.")
-        self._check_value(name, value)
+        check = self.VALUE_CHECKS.get(name)
+        if check is not None:
+            getattr(self, check)(name, value)
         super().__setattr__(name, value)
 
     def __post_init__(self) -> None:
         self.check()
 
-    def _check_value(self, name: str, value) -> None:
-        """Checks the value of one parameter, independently of the others"""
-        timedeltas = ["bg_start_before_onset", "bg_end_before_onset", "end_after_onset", "min_plot_window",
-                      "reference_onset_window", "peak_window_min"]
-        if name in timedeltas and not isinstance(value, timedelta):
-            raise TypeError(f"{name} must be a datetime.timedelta, e.g. timedelta(hours=2), not {value!r}.")
-        if name == "viewings":
-            invalid = [v for v in value if v not in self.VIEWINGS]
-            if invalid or not value:
-                raise ValueError(f"viewings must be a non-empty list of {', '.join(self.VIEWINGS)}; invalid: {invalid}.")
-        if name == "fallback_viewing" and value not in self.VIEWINGS:
-            raise ValueError(f"fallback_viewing must be one of {', '.join(self.VIEWINGS)}, not {value!r}.")
-        if name == "resample_freqs":
-            if not value or not all(isinstance(f, timedelta) for f in value):
-                raise TypeError("resample_freqs must be a non-empty list of datetime.timedelta.")
-            if list(value) != sorted(value):
-                raise ValueError(f"resample_freqs must be in ascending order, not {value}.")
-        if name in ("onset_points", "fluence_points", "download_tries") and (not isinstance(value, int) or value < 1):
-            raise ValueError(f"{name} must be an integer of at least 1, not {value!r}.")
-        if name == "fluence_peak_fraction" and not 0 < value <= 1:
-            raise ValueError(f"fluence_peak_fraction must be in (0, 1], not {value!r}.")
-        if name == "group_options":
-            self._check_group_options(value)
+    # Check of the value of each parameter that has one, independently of the other parameters
+    VALUE_CHECKS: ClassVar[dict] = {
+        **{name: "_check_timedelta" for name in ("bg_start_before_onset", "bg_end_before_onset", "end_after_onset",
+                                                 "min_plot_window", "reference_onset_window", "peak_window_min")},
+        **{name: "_check_count" for name in ("onset_points", "fluence_points", "download_tries")},
+        "viewings": "_check_viewings",
+        "fallback_viewing": "_check_fallback_viewing",
+        "resample_freqs": "_check_resample_freqs",
+        "fluence_peak_fraction": "_check_fraction",
+        "group_options": "_check_group_options",
+    }
 
-    def _check_group_options(self, group_options: dict) -> None:
+    @staticmethod
+    def _check_timedelta(name: str, value) -> None:
+        if not isinstance(value, timedelta):
+            raise TypeError(f"{name} must be a datetime.timedelta, e.g. timedelta(hours=2), not {value!r}.")
+
+    @staticmethod
+    def _check_count(name: str, value) -> None:
+        if not isinstance(value, int) or value < 1:
+            raise ValueError(f"{name} must be an integer of at least 1, not {value!r}.")
+
+    @staticmethod
+    def _check_fraction(name: str, value) -> None:
+        if not 0 < value <= 1:
+            raise ValueError(f"{name} must be in (0, 1], not {value!r}.")
+
+    def _check_viewings(self, name: str, value) -> None:
+        invalid = [v for v in value if v not in self.VIEWINGS]
+        if invalid or not value:
+            raise ValueError(f"{name} must be a non-empty list of {', '.join(self.VIEWINGS)}; invalid: {invalid}.")
+
+    def _check_fallback_viewing(self, name: str, value) -> None:
+        if value not in self.VIEWINGS:
+            raise ValueError(f"{name} must be one of {', '.join(self.VIEWINGS)}, not {value!r}.")
+
+    @staticmethod
+    def _check_resample_freqs(name: str, value) -> None:
+        if not value or not all(isinstance(f, timedelta) for f in value):
+            raise TypeError(f"{name} must be a non-empty list of datetime.timedelta.")
+        if list(value) != sorted(value):
+            raise ValueError(f"{name} must be in ascending order, not {value}.")
+
+    def _check_group_options(self, name: str, group_options: dict) -> None:
         """Checks the particles, sensors and reference channel of the energy channel groups"""
         for particle, groups in group_options.items():
             if particle not in self.PARTICLES:
