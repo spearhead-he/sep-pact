@@ -36,7 +36,7 @@ tool.run_fluences()
 tool.plot_events()
 tool.save_results()
 
-print(tool.df_optimals)
+print(tool.df_results)
 ```
 
 The script reads `inputs/events_example.csv` and `inputs/shocks.dat`, writes the plots to `plots/` and the tables to `outputs/`, relative to the working folder.
@@ -83,12 +83,30 @@ After the steps, the results are attributes of the `SEPPACT` object:
 | `events` | The event list, with the windows filled in and the period of data (`Plot Start`, `Plot End`) |
 | `shocktimes` | The times of the shocks (`pandas.Series`) |
 | `dfs_flux` | The flux of the channel groups: `dfs_flux[particle][sensor][resolution]` is a DataFrame indexed by event number and time, with the columns (viewing, group) |
-| `dfs_events` | The results of every resolution and viewing: `dfs_events[particle][sensor][resolution]` is a DataFrame indexed by event number, with the columns (viewing, group, quantity) |
-| `spikes` | The spike times: `spikes[particle][sensor][resolution][viewing][group][event_no]` |
-| `df_optimals` | The chosen results, one row per event, with the columns (particle, sensor, group, quantity, field) and the resolutions as `timedelta` |
-| `df_ts_quality` | The data quality of the chosen onset: the number of points, of zero or NaN values, and the ratio of transitions to them |
+| `df_series` | The results of every series: one row per event, particle, sensor, channel group (`Energy Label`), resolution and viewing (see below) |
+| `df_spikes` | The spike times: one row per spike, with the index of its series and the column `Spike Time` |
+| `df_results` | The chosen results: one row per event and channel group, indexed by `Event No`, `Particle`, `Sensor` and `Energy Label` (see below) |
 
-`tool.results_table()` returns `df_optimals` as the long table of `results.csv`: one row per event and channel group, with the energy range of the group and the resolutions in minutes (see [results.csv](user_guide.md#resultscsv)). `tool.group_energies(particle, sensor, group)` returns the low and high energy of a channel group, in MeV.
+The three tables have one row per item and one column per quantity, with the resolutions as `Timedelta`. Their rows are in the order of the event list and the parameters (`group_options`, `resample_freqs`, `viewings`).
+
+`df_series` has the columns:
+- `Onset Time`, `BG Level` and `Threshold`, from `calculate_onsets()`;
+- `Onset Copied`: `True` if the series had no onset and took the one of the reference channel at the same resolution and viewing;
+- `Quality Length`, `Quality Zeroes` and `Quality Ratio`: the number of points from the onset to the end of the analysis, of zero or NaN values, and the ratio of transitions to them; `Usable`: whether the data quality is good enough for the onset to be chosen;
+- `Peak Flux` and `Peak Flux Time`, from `calculate_peaks()`;
+- `Fluence`, `Fluence Start`, `Fluence End` and `Fluence Threshold`, from `calculate_fluences()`.
+
+`df_results` has the columns of [results.csv](user_guide.md#resultscsv) (without the energies, and with the resolutions as `Timedelta`) and the data quality of the chosen onset (`Quality Length`, `Quality Zeroes`, `Quality Ratio`).
+
+```python
+series = tool.df_series.loc[(20, "protons", "HET", "8 MeV")]          # the series of a channel group, by resolution and viewing
+onsets = tool.df_series["Onset Time"].unstack("Viewing")               # one column per viewing
+chosen = tool.df_results.loc[(20, "protons", "HET", "8 MeV"), "Onset Time"]
+```
+
+The choices are made by `choose_onset()`, `choose_peak()` and `choose_fluence()` (`spearhead.sep_pact.analysis`), from the rows of `df_series` of a channel group. Of equal values, the first viewing (in the order of `viewings`) or the first resolution is chosen.
+
+`tool.results_table()` returns `df_results` as the table of `results.csv`: one row per event and channel group, with the energy range of the group and the resolutions in minutes. `tool.group_energies(particle, sensor, group)` returns the low and high energy of a channel group, in MeV.
 
 ```python
 results = tool.results_table()
@@ -113,5 +131,5 @@ fig.savefig("event_20.pdf")
 | `conf` | `SEPPACT_parameters`, and the default channel groups and spike thresholds |
 | `inputs` | `read_shocks(path)` and `read_events(path, params)` |
 | `data` | `load()`, which returns the EPD data of each particle as `ParticleData` (the flux with the channel numbers as columns, and the energies of the channels), `load_energies()`, `group_channels_de()`, `flux_cache_file()`, `download_data()` and `resample_flux()`: the EPD data, the flux of the channel groups and its cache |
-| `analysis` | `SEPPACT`, and the functions of the steps: `onset_detection_sigma()` (which returns the onset, the background start and end, and the background level and threshold), `quality_analysis()`, `detect_spikes()`, `remove_spikes()`, `get_peak_flux()`, `fluence_interval()`, `peak_search_end()` and `shocks_in_range()` |
+| `analysis` | `SEPPACT`, and the functions of the steps: `onset_detection_sigma()` (which returns the onset, the background start and end, and the background level and threshold), `quality_analysis()`, `choose_onset()`, `choose_peak()`, `choose_fluence()`, `detect_spikes()`, `remove_spikes()`, `get_peak_flux()`, `fluence_interval()`, `peak_search_end()` and `shocks_in_range()` |
 | `views` | `plot_event()` and `event_plot_filename()` |

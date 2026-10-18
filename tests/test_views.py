@@ -87,8 +87,8 @@ def test_plot_event_without_proton_onsets(tmp_path, monkeypatch):
 def test_plot_event_without_peak_flux_and_fluence(tmp_path, monkeypatch):
     tool = run(synthetic_tool(tmp_path, monkeypatch))
     for quantity in ("Peak Flux", "Fluence"):
-        columns = [c for c in tool.df_optimals.columns if c[:4] == ("protons", "HET", "50 MeV", quantity)]
-        tool.df_optimals.loc[1, columns] = None
+        columns = [c for c in tool.df_results.columns if c.startswith(quantity)]
+        tool.df_results.loc[(1, "protons", "HET", "50 MeV"), columns] = None
     fig = plot_event(tool, 1)
     assert fig.axes[4].get_ylim()[1] == pytest.approx(1e3)  # two decades above the decade of the maximum flux, 99.8
     return fig

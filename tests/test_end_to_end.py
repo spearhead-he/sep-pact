@@ -41,7 +41,9 @@ def test_example_event(tool, particle, group):
     onset, resolution, viewing, copied, at_bg_end, peak, peak_time, fluence, fluence_resolution = EXPECTED[(particle, group)]
 
     def value(quantity, field):
-        return tool.df_optimals.loc[20, (particle, "HET", group, quantity, field)]
+        column = f"{'Onset' if quantity == 'Onset Time' else quantity} {field}" if field in ("Resolution", "Viewing") \
+            else field
+        return tool.df_results.loc[(20, particle, "HET", group), column]
 
     assert value("Onset Time", "Onset Time") == pd.Timestamp(onset)
     assert value("Onset Time", "Resolution") == timedelta(minutes=resolution)

@@ -156,7 +156,7 @@ Each step is one call of the `SEPPACT` object `tool`, created in the parameters 
 9. **Plots:** `tool.plot_events()` writes one plot per event to `dir_plots` (see [Plots](#plots)).
 10. **Results:** `tool.save_results()` writes `results.csv` (see [Results](#results)).
 
-The results stay available as attributes of `tool`, e.g. `tool.df_optimals`; see the [library guide](library.md).
+The results stay available as attributes of `tool`: `tool.df_series` has the results of every resolution and viewing, and `tool.df_results` the chosen ones; see the [library guide](library.md#results).
 
 <a id="data-step"></a>
 ### Data
@@ -236,7 +236,7 @@ Event No,Particle,Sensor,Energy Label,Low Energy,High Energy,Onset Time,Onset Re
 
 Empty cells mean that the channel group has no onset, peak flux or fluence for that event.
 
-The same results with one row per event, and the columns in five levels (particle, sensor, channel group, quantity and field), are `tool.df_optimals` (see the [library guide](library.md#results)). The file can be read with one row per event with pandas:
+The same results are `tool.df_results`, and the results of every resolution and viewing are `tool.df_series` (see the [library guide](library.md#results)). The file can be read with one row per event with pandas:
 
 ```python
 results = pd.read_csv("outputs/results.csv")

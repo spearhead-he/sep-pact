@@ -24,9 +24,8 @@ def _plot_no_onset(ax, tool, event_no: int, particle: str, sensor: str, mevlbl: 
     bg_start = tool.events.loc[event_no, "BG Start"]
     bg_end = tool.events.loc[event_no, "BG End"]
     calc_end = tool.events.loc[event_no, "End Time"]
-    ts_length = tool.df_ts_quality.loc[event_no, (particle, sensor, mevlbl, "Length")]
-    n_zeroes = tool.df_ts_quality.loc[event_no, (particle, sensor, mevlbl, "Zeroes")]
-    ratio = tool.df_ts_quality.loc[event_no, (particle, sensor, mevlbl, "Ratio")]
+    chosen = tool.df_results.loc[(event_no, particle, sensor, mevlbl)]
+    ts_length, n_zeroes, ratio = chosen["Quality Length"], chosen["Quality Zeroes"], chosen["Quality Ratio"]
     ax_title_params["color"] = "red"
     resolution = int(p.resample_freqs[-1].total_seconds()/60)
     ax.set_title(f"{mevlbl} {particle}/{sensor} ({p.fallback_viewing} viewing, {resolution} mins resolution)",
@@ -51,30 +50,25 @@ def _plot_no_onset(ax, tool, event_no: int, particle: str, sensor: str, mevlbl: 
 def _channel_values(tool, event_no: int, particle: str, sensor: str, mevlbl: str) -> SimpleNamespace:
     """Returns the values of the panel of a channel group with an onset: its flux at the resolutions and viewings of
     the onset, peak flux and fluence, and the results"""
-    def opt(quantity: str, field: str):
-        return tool.df_optimals.loc[event_no, (particle, sensor, mevlbl, quantity, field)]
-
-    def quality(field: str):
-        return tool.df_ts_quality.loc[event_no, (particle, sensor, mevlbl, field)]
-
+    chosen = tool.df_results.loc[(event_no, particle, sensor, mevlbl)]
     v = SimpleNamespace(
         bg_start=tool.events.loc[event_no, "BG Start"],
         bg_end=tool.events.loc[event_no, "BG End"],
         calc_end=tool.events.loc[event_no, "End Time"],
-        ts_length=quality("Length"), n_zeroes=quality("Zeroes"), ratio=quality("Ratio"),
-        resample_ot=opt("Onset Time", "Resolution"), viewing_ot=opt("Onset Time", "Viewing"),
-        resample_pf=opt("Peak Flux", "Resolution"), viewing_pf=opt("Peak Flux", "Viewing"),
-        resample_flu=opt("Fluence", "Resolution"), viewing_flu=opt("Fluence", "Viewing"),
-        onset_time=opt("Onset Time", "Onset Time"),
-        peak_time=opt("Peak Flux", "Peak Flux Time"), peak_flux=opt("Peak Flux", "Peak Flux"),
-        fluence_start=opt("Fluence", "Fluence Start"), fluence_end=opt("Fluence", "Fluence End"),
-        fluence=opt("Fluence", "Fluence"), fluence_threshold=opt("Fluence", "Fluence Threshold"),
+        ts_length=chosen["Quality Length"], n_zeroes=chosen["Quality Zeroes"], ratio=chosen["Quality Ratio"],
+        resample_ot=chosen["Onset Resolution"], viewing_ot=chosen["Onset Viewing"],
+        resample_pf=chosen["Peak Flux Resolution"], viewing_pf=chosen["Peak Flux Viewing"],
+        resample_flu=chosen["Fluence Resolution"], viewing_flu=chosen["Fluence Viewing"],
+        onset_time=chosen["Onset Time"],
+        peak_time=chosen["Peak Flux Time"], peak_flux=chosen["Peak Flux"],
+        fluence_start=chosen["Fluence Start"], fluence_end=chosen["Fluence End"],
+        fluence=chosen["Fluence"], fluence_threshold=chosen["Fluence Threshold"],
     )
     # a channel with an onset can still have no peak flux or no fluence
     v.has_peak = not pd.isna(v.resample_pf)
     v.has_fluence = not pd.isna(v.resample_flu)
-    v.onset_copied = not pd.isna(opt("Onset Time", "Onset Copied")) and bool(opt("Onset Time", "Onset Copied"))
-    v.onset_at_bg_end = not pd.isna(opt("Onset Time", "Onset at BG End")) and bool(opt("Onset Time", "Onset at BG End"))
+    v.onset_copied = bool(chosen["Onset Copied"])
+    v.onset_at_bg_end = bool(chosen["Onset at BG End"])
     fluxes = tool.dfs_flux[particle][sensor]
     v.flux = fluxes[v.resample_ot].loc[event_no, (v.viewing_ot, mevlbl)]
     v.flux2 = None
@@ -83,9 +77,9 @@ def _channel_values(tool, event_no: int, particle: str, sensor: str, mevlbl: str
     v.flux3 = None
     if v.has_fluence and v.resample_pf != v.resample_flu:
         v.flux3 = fluxes[v.resample_flu].loc[event_no, (v.viewing_flu, mevlbl)]
-    events = tool.dfs_events[particle][sensor][v.resample_ot]
-    v.bg_level = events.loc[event_no, (v.viewing_ot, mevlbl, "BG Level")]
-    v.threshold = events.loc[event_no, (v.viewing_ot, mevlbl, "Threshold")]
+    series = tool.df_series.loc[(event_no, particle, sensor, mevlbl, v.resample_ot, v.viewing_ot)]
+    v.bg_level = series["BG Level"]
+    v.threshold = series["Threshold"]
     if len(shocks := shocks_in_range(tool.shocktimes, v.onset_time, v.calc_end)) > 0:
         v.calc_end = shocks[0]
     v.shocktimes = shocks_in_range(tool.shocktimes, v.flux.index[0], v.flux.index[-1])
@@ -210,7 +204,7 @@ def plot_event(tool, event_no: int, filename: str | None = None) -> Figure:
                 }
                 axs[i_ax].grid()
                 axs[i_ax].set_yscale("log")
-                if pd.isna(tool.df_optimals.loc[event_no, (particle, sensor, mevlbl, "Onset Time", "Resolution")]):
+                if pd.isna(tool.df_results.loc[(event_no, particle, sensor, mevlbl), "Onset Resolution"]):
                     _plot_no_onset(axs[i_ax], tool, event_no, particle, sensor, mevlbl, ax_title_params)
                 else:
                     _plot_channel(axs[i_ax], tool, event_no, particle, sensor, mevlbl, ax_title_params)
