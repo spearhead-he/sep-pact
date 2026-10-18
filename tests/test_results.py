@@ -5,7 +5,7 @@ from datetime import timedelta
 import pandas as pd
 import pytest
 
-from spearhead.sep_pact.analysis import RESULT_COLUMNS
+from spearhead.sep_pact.analysis import RESULT_COLUMNS, SERIES_INDEX
 from tests.helpers import T0, synthetic_tool
 
 
@@ -20,9 +20,18 @@ def tool(tmp_path, monkeypatch):
 
 
 def test_every_channel_group_has_results(tool):
-    onsets = tool.df_optimals.xs(("Onset Time", "Onset Time"), axis="columns", level=(3, 4))
-    assert (onsets == pd.Timestamp(T0 - timedelta(minutes=2))).all().all()
-    assert tool.df_optimals.xs(("Fluence", "Fluence"), axis="columns", level=(3, 4)).notna().all().all()
+    assert (tool.df_results["Onset Time"] == pd.Timestamp(T0 - timedelta(minutes=2))).all()
+    assert tool.df_results["Fluence"].notna().all()
+
+
+def test_df_series_has_a_row_per_series(tool):
+    assert tool.df_series.index.names == SERIES_INDEX
+    n_channels = len(list(tool._iter_channels()))
+    assert len(tool.df_series) == n_channels * len(tool.params.resample_freqs) * len(tool.params.viewings)
+    # the resolutions and viewings in the order of the parameters
+    first = tool.df_series.index[:len(tool.params.viewings) + 1]
+    assert list(first.get_level_values("Viewing")) == tool.params.viewings + [tool.params.viewings[0]]
+    assert first.get_level_values("Resolution")[-1] == tool.params.resample_freqs[1]
 
 
 def test_group_energies(tool):
@@ -34,16 +43,16 @@ def test_group_energies(tool):
 def test_results_table_has_a_row_per_event_and_channel_group(tool):
     table = tool.results_table()
     assert list(table.columns[:6]) == ["Event No", "Particle", "Sensor", "Energy Label", "Low Energy", "High Energy"]
-    assert list(table.columns[6:]) == list(RESULT_COLUMNS.values())
+    assert list(table.columns[6:]) == RESULT_COLUMNS
     assert list(zip(table["Event No"], table["Particle"], table["Sensor"], table["Energy Label"])) == \
         [(1, particle, sensor, mevlbl) for particle, sensor, mevlbl in tool._iter_channels()]
 
 
-def test_results_table_has_the_values_of_df_optimals(tool):
+def test_results_table_has_the_values_of_df_results(tool):
     table = tool.results_table().set_index(["Event No", "Particle", "Sensor", "Energy Label"])
-    for (event_no, particle, sensor, mevlbl), row in table.iterrows():
-        for (quantity, field), column in RESULT_COLUMNS.items():
-            value = tool.df_optimals.loc[event_no, (particle, sensor, mevlbl, quantity, field)]
+    for key, row in table.iterrows():
+        for column in RESULT_COLUMNS:
+            value = tool.df_results.loc[key, column]
             if isinstance(value, timedelta):
                 assert row[column] == value.total_seconds() / 60
             elif pd.isna(value):
@@ -76,3 +85,15 @@ def test_run_data_creates_the_cache_folder(tmp_path, monkeypatch):
     tool = synthetic_tool(tmp_path, monkeypatch, dir_saves=str(tmp_path / "new" / "cache"))
     assert len(os.listdir(tmp_path / "new" / "cache")) == 1
     assert tool.dfs_flux is not None
+
+
+def test_results_table_has_the_same_type_for_one_or_more_events(tmp_path, monkeypatch):
+    # float32 flux, as downloaded EPD data; the results are written as computed, in float64
+    tool = synthetic_tool(tmp_path, monkeypatch)
+    tool.run_onsets()
+    tool.run_spikes()
+    tool.run_peaks()
+    tool.run_fluences()
+    assert tool.dfs_flux["electrons"]["HET"][timedelta(minutes=2)].dtypes.iloc[0] == "float32"
+    for column in ("Peak Flux", "Fluence", "Fluence Threshold"):
+        assert tool.results_table()[column].dtype == "float64"

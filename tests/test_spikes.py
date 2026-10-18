@@ -83,18 +83,24 @@ def spiky_tool(tmp_path, monkeypatch, **parameters):
     return tool, large, small
 
 
+def spike_times(tool, viewing):
+    """Returns the spike times of the 1 MeV electrons of the synthetic event at 2 minutes, in a viewing"""
+    spikes = tool.df_spikes.reset_index()
+    spikes = spikes[(spikes["Energy Label"] == "1 MeV") & (spikes["Resolution"] == timedelta(minutes=2))
+                    & (spikes["Viewing"] == viewing)]
+    return list(spikes["Spike Time"])
+
+
 def test_spikes_use_the_threshold_of_the_resolution(tmp_path, monkeypatch):
     thresholds = {timedelta(minutes=m): 3.0 for m in (2, 5, 10, 30)}
     tool, large, small = spiky_tool(tmp_path, monkeypatch, spike_thresholds=thresholds)
-    spikes = tool.spikes["electrons"]["HET"][timedelta(minutes=2)]["sun"]["1 MeV"]
-    assert spikes == {1: [pd.Timestamp(large)]}
-    assert tool.spikes["electrons"]["HET"][timedelta(minutes=2)]["north"]["1 MeV"] == {}
+    assert spike_times(tool, "sun") == [pd.Timestamp(large)]
+    assert spike_times(tool, "north") == []
 
 
 def test_peak_flux_without_the_spikes(tmp_path, monkeypatch):
     tool, large, small = spiky_tool(tmp_path, monkeypatch)  # threshold 2.0 at 2 minutes: both spikes
-    spikes = tool.spikes["electrons"]["HET"][timedelta(minutes=2)]["sun"]["1 MeV"]
-    assert spikes == {1: [pd.Timestamp(large), pd.Timestamp(small)]}
+    assert spike_times(tool, "sun") == [pd.Timestamp(large), pd.Timestamp(small)]
     tool.run_peaks()
-    peak = tool.dfs_events["electrons"]["HET"][timedelta(minutes=2)].loc[1, ("sun", "1 MeV", "Peak Flux")]
+    peak = tool.df_series.loc[(1, "electrons", "HET", "1 MeV", timedelta(minutes=2), "sun"), "Peak Flux"]
     assert peak == pytest.approx(99.77, abs=0.01)

@@ -11,24 +11,15 @@ from .data import channel_layout, download_data, load_energies, resample_flux
 from .inputs import read_events, read_shocks
 
 
-# the columns of the results table, for the fields (quantity, field) of df_optimals
-RESULT_COLUMNS = {
-    ("Onset Time", "Onset Time"): "Onset Time",
-    ("Onset Time", "Resolution"): "Onset Resolution",
-    ("Onset Time", "Viewing"): "Onset Viewing",
-    ("Onset Time", "Onset Copied"): "Onset Copied",
-    ("Onset Time", "Onset at BG End"): "Onset at BG End",
-    ("Peak Flux", "Peak Flux"): "Peak Flux",
-    ("Peak Flux", "Peak Flux Time"): "Peak Flux Time",
-    ("Peak Flux", "Resolution"): "Peak Flux Resolution",
-    ("Peak Flux", "Viewing"): "Peak Flux Viewing",
-    ("Fluence", "Fluence"): "Fluence",
-    ("Fluence", "Fluence Start"): "Fluence Start",
-    ("Fluence", "Fluence End"): "Fluence End",
-    ("Fluence", "Fluence Threshold"): "Fluence Threshold",
-    ("Fluence", "Resolution"): "Fluence Resolution",
-    ("Fluence", "Viewing"): "Fluence Viewing",
-}
+# the index of df_series, one row per series, and of df_results, one row per channel group of an event
+SERIES_INDEX = ["Event No", "Particle", "Sensor", "Energy Label", "Resolution", "Viewing"]
+CHANNEL_INDEX = SERIES_INDEX[:4]
+FLUENCE_COLUMNS = ["Fluence", "Fluence Start", "Fluence End", "Fluence Threshold"]
+QUALITY_COLUMNS = ["Quality Length", "Quality Zeroes", "Quality Ratio"]
+# the columns of df_results in results.csv
+RESULT_COLUMNS = ["Onset Time", "Onset Resolution", "Onset Viewing", "Onset Copied", "Onset at BG End",
+                  "Peak Flux", "Peak Flux Time", "Peak Flux Resolution", "Peak Flux Viewing",
+                  "Fluence", "Fluence Start", "Fluence End", "Fluence Threshold", "Fluence Resolution", "Fluence Viewing"]
 
 
 def shocks_in_range(shocktimes: pd.Series, start: datetime, end: datetime) -> list[datetime]:
@@ -250,6 +241,68 @@ def fluence_interval(ts: pd.Series,
     return fluence, fluence_start, fluence_end, threshold
 
 
+def _rows_at(rows: pd.DataFrame, level: str, value) -> pd.DataFrame:
+    """Returns the rows of a channel group (indexed by resolution and viewing) at a resolution or viewing, indexed by
+    the other level"""
+    return rows[rows.index.get_level_values(level) == value].droplevel(level)
+
+
+def choose_onset(rows: pd.DataFrame, reference_onset, reference_onset_window: timedelta, bg_end: datetime) -> dict:
+    """Returns the chosen onset of a channel group, from its rows of df_series indexed by (resolution, viewing) in the
+    order of the parameters
+
+    The onset is the earliest of the viewings at the finest resolution with a usable series, and within
+    reference_onset_window of reference_onset if that is given. Of equal onsets, the first viewing is chosen.
+    """
+    usable = rows[rows["Usable"]]
+    if not pd.isna(reference_onset):
+        usable = usable[(usable["Onset Time"] - reference_onset).abs() <= reference_onset_window]
+    if usable.empty:
+        return {"Onset Time": pd.NaT, "Onset Resolution": pd.NaT, "Onset Viewing": None, "Onset Copied": None,
+                "Onset at BG End": None, **{column: np.nan for column in QUALITY_COLUMNS}}
+    resolution = usable.index.get_level_values("Resolution")[0]
+    at_resolution = _rows_at(usable, "Resolution", resolution)
+    viewing = at_resolution["Onset Time"].idxmin()
+    row = at_resolution.loc[viewing]
+    # an onset at the end of the background may have started inside it
+    return {"Onset Time": row["Onset Time"], "Onset Resolution": resolution, "Onset Viewing": viewing,
+            "Onset Copied": bool(row["Onset Copied"]), "Onset at BG End": bool(row["Onset Time"] <= bg_end),
+            **{column: row[column] for column in QUALITY_COLUMNS}}
+
+
+def choose_peak(rows: pd.DataFrame, resolution) -> dict:
+    """Returns the chosen peak flux of a channel group, from its rows of df_series indexed by (resolution, viewing):
+    the highest of the viewings at the resolution of the chosen onset. Of equal peaks, the first viewing is chosen."""
+    none = {"Peak Flux": np.nan, "Peak Flux Time": pd.NaT, "Peak Flux Resolution": pd.NaT, "Peak Flux Viewing": None}
+    if pd.isna(resolution):
+        return none
+    peaks = _rows_at(rows, "Resolution", resolution)["Peak Flux"].dropna()
+    if peaks.empty:
+        return none
+    viewing = peaks.idxmax()
+    return {"Peak Flux": peaks[viewing],
+            "Peak Flux Time": rows.loc[(resolution, viewing), "Peak Flux Time"],
+            "Peak Flux Resolution": resolution,
+            "Peak Flux Viewing": viewing}
+
+
+def choose_fluence(rows: pd.DataFrame, onset, viewing) -> dict:
+    """Returns the chosen fluence of a channel group, from its rows of df_series indexed by (resolution, viewing):
+    the largest of the resolutions in the viewing of the chosen peak, among those that do not start before the onset.
+    Of equal fluences, the first resolution is chosen."""
+    none = {"Fluence": np.nan, "Fluence Start": pd.NaT, "Fluence End": pd.NaT, "Fluence Threshold": np.nan,
+            "Fluence Resolution": pd.NaT, "Fluence Viewing": None}
+    if pd.isna(viewing) or pd.isna(onset):
+        return none
+    in_viewing = _rows_at(rows, "Viewing", viewing)
+    valid = in_viewing[in_viewing["Fluence"].notna() & ~(in_viewing["Fluence Start"] < onset)]
+    if valid.empty:
+        return {**none, "Fluence Viewing": viewing}
+    resolution = valid["Fluence"].idxmax()
+    return {**{column: valid.loc[resolution, column] for column in FLUENCE_COLUMNS},
+            "Fluence Resolution": resolution, "Fluence Viewing": viewing}
+
+
 class SEPPACT:
     """Onset time, peak flux and fluence of the events of an event list
 
@@ -258,10 +311,10 @@ class SEPPACT:
     - events: the event list, with the windows filled in
     - shocktimes: the times of the shocks
     - dfs_flux: the flux of the channel groups, per particle, sensor and resolution
-    - dfs_events: the onset, peak flux and fluence of every resolution and viewing, per particle, sensor and resolution
-    - spikes: the spike times, per particle, sensor, resolution, viewing, channel group and event
-    - df_optimals: the chosen onset, peak flux and fluence of each event and channel group
-    - df_ts_quality: the data quality of the chosen onset of each event and channel group
+    - df_series: the onset, data quality, peak flux and fluence of every series, one row per event, particle, sensor,
+      group label, resolution and viewing
+    - df_spikes: the spike times, one row per spike, with the index of its series
+    - df_results: the chosen onset, peak flux and fluence, one row per event and channel group
     """
 
     def __init__(self, params: SEPPACT_parameters | None = None) -> None:
@@ -273,10 +326,9 @@ class SEPPACT:
         self.events = None
         self.energies = None
         self.dfs_flux = None
-        self.dfs_events = None
-        self.df_optimals = None
-        self.df_ts_quality = None
-        self.spikes = None
+        self.df_series = None
+        self.df_spikes = None
+        self.df_results = None
 
     def _analysis_end(self, event_no: int, onset: datetime) -> datetime:
         """Returns the end of the analysis of an onset: the end time, or the first shock after the onset"""
@@ -289,62 +341,62 @@ class SEPPACT:
         """Returns the labels of the channel groups of a particle"""
         return list(self.params.group_options[particle].keys())
 
-    def _iter_particle_sensors(self):
-        """Yields (particle, sensor) of the channel groups"""
-        for particle in self.particles:
-            for sensor in self.sensors[particle]:
-                yield particle, sensor
-
-    def _iter_series(self):
-        """Yields (particle, sensor, resolution) of the tables of dfs_flux and dfs_events"""
-        for particle, sensor in self._iter_particle_sensors():
-            for resample_freq in self.params.resample_freqs:
-                yield particle, sensor, resample_freq
-
     def _iter_channels(self):
         """Yields (particle, sensor, group label) of the channel groups"""
-        for particle, sensor in self._iter_particle_sensors():
-            for mevlbl in self._groups(particle):
-                yield particle, sensor, mevlbl
-
-    def _iter_event_series(self, particle: str, sensor: str, resample_freq: timedelta):
-        """Yields (event number, viewing, group label, flux of the event) of a table of dfs_flux"""
-        for i, df_flux in self.dfs_flux[particle][sensor][resample_freq].groupby(level="Event No"):
-            for viewing in self.params.viewings:
+        for particle in self.particles:
+            for sensor in self.sensors[particle]:
                 for mevlbl in self._groups(particle):
-                    yield i, viewing, mevlbl, df_flux
+                    yield particle, sensor, mevlbl
 
-    def _empty_table(self, fields: list[tuple]) -> pd.DataFrame:
-        """Returns a table indexed by event number with the columns (particle, sensor, group, *field) of every field"""
-        columns = [(particle, sensor, mevlbl, *field)
-                   for particle, sensor, mevlbl in self._iter_channels() for field in fields]
-        return pd.DataFrame(index=self.events.index, columns=pd.MultiIndex.from_tuples(columns))
+    def _iter_series_keys(self):
+        """Yields the index of each row of df_series: (event number, particle, sensor, group label, resolution,
+        viewing), with the resolutions and viewings in the order of the parameters"""
+        for event_no in self.events.index:
+            for particle, sensor, mevlbl in self._iter_channels():
+                for resample_freq in self.params.resample_freqs:
+                    for viewing in self.params.viewings:
+                        yield event_no, particle, sensor, mevlbl, resample_freq, viewing
+
+    def _iter_channel_rows(self):
+        """Yields (event number, particle, sensor, group label) and the rows of df_series of each channel group, indexed
+        by (resolution, viewing) in the order of the parameters"""
+        for key, rows in self.df_series.groupby(level=CHANNEL_INDEX, sort=False):
+            yield key, rows.droplevel(CHANNEL_INDEX)
+
+    def _flux(self, event_no: int, particle: str, sensor: str, mevlbl: str, resample_freq: timedelta,
+              viewing: str) -> pd.Series:
+        """Returns the flux of an event and channel group at a resolution and viewing, indexed by time"""
+        return self.dfs_flux[particle][sensor][resample_freq].loc[event_no, (viewing, mevlbl)]
+
+    def _chosen(self, event_no: int, particle: str, sensor: str, mevlbl: str, column: str):
+        """Returns a column of df_results of an event and channel group"""
+        return self.df_results.loc[(event_no, particle, sensor, mevlbl), column]
 
     def _onset(self, event_no: int, particle: str, sensor: str, mevlbl: str):
         """Returns the chosen onset of an event and channel group"""
-        return self.df_optimals.loc[event_no, (particle, sensor, mevlbl, "Onset Time", "Onset Time")]
+        return self._chosen(event_no, particle, sensor, mevlbl, "Onset Time")
 
-    def _series_after_onset(self,
-                            df_flux: pd.DataFrame,
-                            event_no: int,
-                            viewing: str,
-                            mevlbl: str,
-                            onset,
-                            enddate) -> pd.Series:
-        """Returns the flux of an event, viewing and group from the onset to enddate"""
-        return df_flux.loc[(event_no, slice(onset, enddate)), (viewing, mevlbl)].droplevel(0, axis="index")
+    def _set_series(self, columns: dict) -> None:
+        """Sets columns of df_series from {column: values in the order of its rows}"""
+        for column, values in columns.items():
+            self.df_series[column] = values
 
-    def _without_spikes(self,
-                        ts: pd.Series,
-                        event_no: int,
-                        particle: str,
-                        sensor: str,
-                        resample_freq: timedelta,
-                        viewing: str,
-                        mevlbl: str) -> pd.Series:
-        """Returns the series with the spikes of its event, viewing and group removed"""
-        spike_times = self.spikes[particle][sensor][resample_freq][viewing][mevlbl].get(event_no, [])
-        return remove_spikes(ts, spike_times, resample_freq)
+    def _set_results(self, rows: dict) -> None:
+        """Sets the columns of df_results from {(event number, particle, sensor, group label): {column: value}}; the
+        first call (select_onsets()) creates df_results, with its rows in the order of the event list and channel groups"""
+        df = pd.DataFrame.from_dict(rows, orient="index")
+        df.index = pd.MultiIndex.from_tuples(df.index, names=CHANNEL_INDEX)
+        if self.df_results is None:
+            self.df_results = df.reindex(pd.MultiIndex.from_tuples(
+                [(event_no, *channel) for event_no in self.events.index for channel in self._iter_channels()],
+                names=CHANNEL_INDEX))
+        else:
+            for column in df.columns:
+                self.df_results[column] = df[column]
+
+    def _spike_lists(self) -> dict:
+        """Returns {index of a row of df_series: its spike times}, for the rows with spikes"""
+        return {key: list(spikes) for key, spikes in self.df_spikes.groupby(level=SERIES_INDEX, sort=False)["Spike Time"]}
 
     def run_inputs(self) -> None:
         """Reads the shock list and the event list"""
@@ -378,169 +430,99 @@ class SEPPACT:
         self.calculate_onsets()
         self.select_onsets()
 
-    def _onset_detection_df(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Returns the onset, background level and threshold of every event and column (viewing, group) of a table of
-        dfs_flux"""
+    def calculate_onsets(self) -> None:
+        """Detects the onset of every series (df_series), copies the onset of the reference channel to the series of the
+        other particles without one, and checks the data quality after the onsets"""
         p = self.params
-        rows = {}
-        for i, df_flux in df.groupby(level="Event No"):
-            row = {}
-            for column, series in df_flux.items():
-                timeseries = series.loc[(i, slice(None, self.events.loc[i, "End Time"]))]
-                onset_time, _, _, levels = onset_detection_sigma(timeseries.loc[i],
-                                                                 s=p.onset_sigma,
-                                                                 n=p.onset_points,
-                                                                 bg_start=self.events.loc[i, "BG Start"],
-                                                                 bg_end=self.events.loc[i, "BG End"])
-                row[(*series.name, "Onset Time")] = onset_time
-                row[(*series.name, "BG Level")] = levels["bg_level"]
-                row[(*series.name, "Threshold")] = levels["threshold"]
-            rows[i] = row
-        return pd.DataFrame.from_dict(rows, orient="index")
+        rows = []
+        for event_no, particle, sensor, mevlbl, resample_freq, viewing in self._iter_series_keys():
+            flux = self._flux(event_no, particle, sensor, mevlbl, resample_freq, viewing)
+            onset_time, _, _, levels = onset_detection_sigma(flux.loc[:self.events.loc[event_no, "End Time"]],
+                                                             s=p.onset_sigma,
+                                                             n=p.onset_points,
+                                                             bg_start=self.events.loc[event_no, "BG Start"],
+                                                             bg_end=self.events.loc[event_no, "BG End"])
+            rows.append({"Onset Time": onset_time, "BG Level": levels["bg_level"], "Threshold": levels["threshold"]})
+        index = pd.MultiIndex.from_tuples(list(self._iter_series_keys()), names=SERIES_INDEX)
+        self.df_series = pd.DataFrame(rows, index=index)
+        self.df_series["Onset Time"] = self.df_series["Onset Time"].astype("datetime64[ns]")
+        self._copy_reference_onsets()
+        self._check_quality()
 
     def _copy_reference_onsets(self) -> None:
-        """Marks the missing onsets ("Dirty Onset"), and gives the groups of the other particles without an onset
-        the onset of the reference channel at the same resolution and viewing"""
-        for particle, sensor, resample_freq in self._iter_series():
-            df = self.dfs_events[particle][sensor][resample_freq]
-            for viewing in self.params.viewings:
-                for mevlbl in self._groups(particle):
-                    df.loc[slice(None), (viewing, mevlbl, "Dirty Onset")] = \
-                        pd.isna(df.loc[slice(None), (viewing, mevlbl, "Onset Time")])
-                    df.sort_index(axis="columns", inplace=True)
+        """Gives the series of the other particles without an onset the onset of the reference channel at the same
+        resolution and viewing ("Onset Copied")"""
+        self.df_series["Onset Copied"] = False
         if self.reference_channel is None:
             return
-        ref_particle, ref_sensor, ref_mevlbl = (self.reference_channel["particle"], self.reference_channel["sensor"],
-                                                self.reference_channel["mev"])
-        for particle, sensor, resample_freq in self._iter_series():
-            if particle == ref_particle:
-                continue
-            df = self.dfs_events[particle][sensor][resample_freq]
-            reference = self.dfs_events[ref_particle][ref_sensor][resample_freq]
-            for viewing in self.params.viewings:
-                for mevlbl in self._groups(particle):
-                    dirty = df.loc[slice(None), (viewing, mevlbl, "Dirty Onset")]
-                    df.loc[dirty, (viewing, mevlbl, "Onset Time")] = reference.loc[dirty, (viewing, ref_mevlbl, "Onset Time")]
+        index = self.df_series.index
+        reference = self.df_series["Onset Time"][(index.get_level_values("Particle") == self.reference_channel["particle"])
+                                                 & (index.get_level_values("Sensor") == self.reference_channel["sensor"])
+                                                 & (index.get_level_values("Energy Label") == self.reference_channel["mev"])]
+        reference = reference.droplevel(["Particle", "Sensor", "Energy Label"])
+        reference_onsets = reference.reindex(index.droplevel(["Particle", "Sensor", "Energy Label"])).values
+        copied = (self.df_series["Onset Time"].isna().values
+                  & (index.get_level_values("Particle") != self.reference_channel["particle"])
+                  & ~pd.isna(reference_onsets))
+        self.df_series.loc[copied, "Onset Time"] = reference_onsets[copied]
+        self.df_series.loc[copied, "Onset Copied"] = True
 
-    def calculate_onsets(self) -> None:
-        """Detects the onsets of every resolution and viewing (dfs_events), with the onsets copied from the reference
-        channel"""
-        self.dfs_events = {particle: {sensor: {} for sensor in self.sensors[particle]} for particle in self.particles}
-        for particle, sensor, resample_freq in self._iter_series():
-            self.dfs_events[particle][sensor][resample_freq] = \
-                self._onset_detection_df(self.dfs_flux[particle][sensor][resample_freq])
-        self._copy_reference_onsets()
+    def _check_quality(self) -> None:
+        """Checks the data quality of each series from its onset to the end of the analysis ("Usable"): the number of
+        points, of zero or NaN values, and the ratio of transitions to them"""
+        p = self.params
+        quality = {"Quality Length": [], "Quality Zeroes": [], "Quality Ratio": [], "Usable": []}
+        for key, onset in self.df_series["Onset Time"].items():
+            if pd.isna(onset):
+                values = (False, None, None, np.nan)
+            else:
+                flux = self._flux(*key)
+                values = quality_analysis(flux[onset:self._analysis_end(key[0], onset)], p.quality_tolerance,
+                                          p.quality_adjustable)
+            for column, value in zip(("Usable", "Quality Length", "Quality Zeroes", "Quality Ratio"), values):
+                quality[column].append(value)
+        quality["Quality Length"] = pd.array(quality["Quality Length"], dtype="Int64")
+        quality["Quality Zeroes"] = pd.array(quality["Quality Zeroes"], dtype="Int64")
+        self._set_series(quality)
 
     def select_onsets(self) -> None:
-        """Chooses the onset of each event and channel group (df_optimals), the reference channel first"""
-        col_subsets = {
-            "Onset Time": ["Onset Time", "Onset Copied", "Onset at BG End"],
-            "Peak Flux": ["Peak Flux", "Peak Flux Time"],
-            "Fluence": ["Fluence", "Fluence Start", "Fluence End", "Fluence Threshold"]
-        }
-        self.df_optimals = self._empty_table([(col1, col2) for col1 in ["Onset Time", "Peak Flux", "Fluence"]
-                                              for col2 in col_subsets[col1] + ["Resolution", "Viewing"]])
-        self.df_ts_quality = self._empty_table([(col,) for col in ["Length", "Zeroes", "Ratio"]])
-        for event_no in self.df_optimals.index:
-            for particle in reference_iter(self.particles, self.reference_channel):
-                for sensor in reference_iter(self.sensors[particle], self.reference_channel):
-                    for mevlbl in reference_iter(self.params.group_options[particle].keys(), self.reference_channel):
-                        self._select_onset(event_no, particle, sensor, mevlbl)
-
-    def _usable_series(self, event_no: int, particle: str, sensor: str, mevlbl: str) -> dict:
-        """Returns the data quality of the series with an onset that can be used, per resolution: a list of dicts with
-        the viewing, the number of points, of zero or NaN values, and the ratio of transitions to them"""
-        p = self.params
-        # empty until the reference channel, which is processed first, has its onset
-        reference_onset = None
-        if self.reference_channel is not None:
-            reference_onset = self._onset(event_no, self.reference_channel["particle"], self.reference_channel["sensor"],
-                                          self.reference_channel["mev"])
-        eligible_tss = {resample_freq: [] for resample_freq in p.resample_freqs}
-        for resample_freq in p.resample_freqs:
-            for viewing in p.viewings:
-                onset = self.dfs_events[particle][sensor][resample_freq].loc[event_no, (viewing, mevlbl, "Onset Time")]
-                if pd.isna(onset):
+        """Chooses the onset of each event and channel group (df_results), the reference channel first"""
+        self.df_results = None
+        chosen = {}
+        reference_onsets = {}
+        channel_rows = list(self._iter_channel_rows())
+        # the onset of the reference channel limits the onsets of the other channel groups of the event
+        is_reference = [self._is_reference(key[1:]) for key, _ in channel_rows]
+        for reference_first in (True, False):
+            for (key, rows), reference in zip(channel_rows, is_reference):
+                if reference != reference_first:
                     continue
-                if not pd.isna(reference_onset) and abs(onset - reference_onset) > p.reference_onset_window:
-                    continue
-                timeseries = self.dfs_flux[particle][sensor][resample_freq].loc[event_no, (viewing, mevlbl)]
-                timeseries = timeseries[onset:self._analysis_end(event_no, onset)]
-                qualified, ts_length, n_zeroes, ratio = quality_analysis(timeseries, p.quality_tolerance, p.quality_adjustable)
-                if qualified:
-                    eligible_tss[resample_freq].append({"viewing": viewing, "ts_length": ts_length, "n_zeroes": n_zeroes,
-                                                        "ratio": ratio})
-        return eligible_tss
+                chosen[key] = choose_onset(rows, reference_onsets.get(key[0], pd.NaT), self.params.reference_onset_window,
+                                           self.events.loc[key[0], "BG End"])
+                if reference:
+                    reference_onsets[key[0]] = chosen[key]["Onset Time"]
+        self._set_results(chosen)
+        self.df_results[["Quality Length", "Quality Zeroes"]] = self.df_results[["Quality Length", "Quality Zeroes"]] \
+            .astype("Int64")
 
-    def _best_resolution_and_viewing(self,
-                                     eligible_tss: dict,
-                                     event_no: int,
-                                     particle: str,
-                                     sensor: str,
-                                     mevlbl: str) -> tuple:
-        """Returns the finest resolution with a usable series, and its viewing with the earliest onset"""
-        for resample_freq in self.params.resample_freqs:
-            if len(eligible_tss[resample_freq]) == 0:
-                continue
-            onsets = self.dfs_events[particle][sensor][resample_freq]
-            best_viewing = None
-            for quality_metrics in eligible_tss[resample_freq]:
-                viewing = quality_metrics["viewing"]
-                onset = onsets.loc[event_no, (viewing, mevlbl, "Onset Time")]
-                if best_viewing is None or onset < onsets.loc[event_no, (best_viewing, mevlbl, "Onset Time")]:
-                    best_viewing = viewing
-            return resample_freq, best_viewing
-        return None, None
-
-    def _select_onset(self, event_no: int, particle: str, sensor: str, mevlbl: str) -> None:
-        """Chooses the onset of one event and channel group, with its flags and data quality"""
-        eligible_tss = self._usable_series(event_no, particle, sensor, mevlbl)
-        best_res, best_viewing = self._best_resolution_and_viewing(eligible_tss, event_no, particle, sensor, mevlbl)
-        column = (particle, sensor, mevlbl, "Onset Time")
-        self.df_optimals.loc[event_no, (*column, "Resolution")] = best_res
-        self.df_optimals.loc[event_no, (*column, "Viewing")] = best_viewing
-        if best_res is None:
-            self.df_optimals.loc[event_no, (*column, "Onset Time")] = None
-            for field in ("Length", "Zeroes", "Ratio"):
-                self.df_ts_quality.loc[event_no, (particle, sensor, mevlbl, field)] = None
-            return
-        onsets = self.dfs_events[particle][sensor][best_res]
-        onset_time = onsets.loc[event_no, (best_viewing, mevlbl, "Onset Time")]
-        self.df_optimals.loc[event_no, (*column, "Onset Time")] = onset_time
-        # an onset is copied when the channel has none and the reference channel has one;
-        # an onset at the end of the background may have started inside it
-        if not pd.isna(onset_time):
-            self.df_optimals.loc[event_no, (*column, "Onset Copied")] = \
-                bool(onsets.loc[event_no, (best_viewing, mevlbl, "Dirty Onset")])
-            self.df_optimals.loc[event_no, (*column, "Onset at BG End")] = onset_time <= self.events.loc[event_no, "BG End"]
-        qties = [x for x in eligible_tss[best_res] if x["viewing"] == best_viewing][0]
-        self.df_ts_quality.loc[event_no, (particle, sensor, mevlbl, "Length")] = qties["ts_length"]
-        self.df_ts_quality.loc[event_no, (particle, sensor, mevlbl, "Zeroes")] = qties["n_zeroes"]
-        self.df_ts_quality.loc[event_no, (particle, sensor, mevlbl, "Ratio")] = qties["ratio"]
+    def _is_reference(self, channel: tuple) -> bool:
+        """Returns whether (particle, sensor, group label) is the reference channel"""
+        rc = self.reference_channel
+        return rc is not None and channel == (rc["particle"], rc["sensor"], rc["mev"])
 
     def run_spikes(self) -> None:
-        """Finds the spikes of every resolution and viewing after the chosen onset"""
+        """Finds the spikes of every series after the chosen onset of its channel group (df_spikes)"""
         p = self.params
-        self.spikes = {
-            particle: {
-                sensor: {
-                    resample_freq: {viewing: {mevlbl: {} for mevlbl in self._groups(particle)} for viewing in p.viewings}
-                    for resample_freq in p.resample_freqs
-                }
-                for sensor in self.sensors[particle]
-            }
-            for particle in self.particles
-        }
-        for particle, sensor, resample_freq in self._iter_series():
-            for i, viewing, mevlbl, df_flux in self._iter_event_series(particle, sensor, resample_freq):
-                onset = self._onset(i, particle, sensor, mevlbl)
-                if pd.isna(onset):
-                    continue
-                enddate = peak_search_end(onset, self._analysis_end(i, onset), p.peak_window_min)
-                ts = self._series_after_onset(df_flux, i, viewing, mevlbl, onset, enddate)
-                detected_spikes = detect_spikes(ts, threshold=p.spike_thresholds[resample_freq])
-                if len(detected_spikes) > 0:
-                    self.spikes[particle][sensor][resample_freq][viewing][mevlbl][i] = detected_spikes
+        rows = []
+        for key in self.df_series.index:
+            event_no, particle, sensor, mevlbl, resample_freq, viewing = key
+            onset = self._onset(event_no, particle, sensor, mevlbl)
+            if pd.isna(onset):
+                continue
+            enddate = peak_search_end(onset, self._analysis_end(event_no, onset), p.peak_window_min)
+            ts = self._flux(*key)[onset:enddate]
+            rows += [(*key, spike_time) for spike_time in detect_spikes(ts, threshold=p.spike_thresholds[resample_freq])]
+        self.df_spikes = pd.DataFrame(rows, columns=SERIES_INDEX + ["Spike Time"]).set_index(SERIES_INDEX)
 
     def run_peaks(self) -> None:
         """Finds the peak flux of every resolution and viewing, and chooses one per event and channel group"""
@@ -548,50 +530,29 @@ class SEPPACT:
         self.select_peaks()
 
     def calculate_peaks(self) -> None:
-        """Finds the peak flux of every resolution and viewing (dfs_events), without the spikes"""
-        for particle, sensor, resample_freq in self._iter_series():
-            df_events = self.dfs_events[particle][sensor][resample_freq]
-            for i, viewing, mevlbl, df_flux in self._iter_event_series(particle, sensor, resample_freq):
-                onset = self._onset(i, particle, sensor, mevlbl)
-                if pd.isna(onset):
-                    df_events.loc[i, (viewing, mevlbl, "Peak Flux")] = None
-                    df_events.loc[i, (viewing, mevlbl, "Peak Flux Time")] = None
-                    continue
-                enddate = peak_search_end(onset, self._analysis_end(i, onset), self.params.peak_window_min)
-                ts = self._series_after_onset(df_flux, i, viewing, mevlbl, onset, enddate)
-                pf, pft = get_peak_flux(self._without_spikes(ts, i, particle, sensor, resample_freq, viewing, mevlbl))
-                df_events.loc[i, (viewing, mevlbl, "Peak Flux")] = pf
-                df_events.loc[i, (viewing, mevlbl, "Peak Flux Time")] = pft
-            df_events.sort_index(axis="columns", inplace=True)
+        """Finds the peak flux of every series (df_series), from the chosen onset of its channel group, without the
+        spikes"""
+        spikes = self._spike_lists()
+        peaks = {"Peak Flux": [], "Peak Flux Time": []}
+        for key in self.df_series.index:
+            event_no, particle, sensor, mevlbl, resample_freq, viewing = key
+            onset = self._onset(event_no, particle, sensor, mevlbl)
+            pf, pft = None, None
+            if not pd.isna(onset):
+                enddate = peak_search_end(onset, self._analysis_end(event_no, onset), self.params.peak_window_min)
+                ts = self._flux(*key)[onset:enddate]
+                pf, pft = get_peak_flux(remove_spikes(ts, spikes.get(key, []), resample_freq))
+            peaks["Peak Flux"].append(pf)
+            peaks["Peak Flux Time"].append(pft)
+        peaks["Peak Flux"] = pd.array(peaks["Peak Flux"], dtype="float64")
+        peaks["Peak Flux Time"] = pd.to_datetime(pd.Series(peaks["Peak Flux Time"], dtype=object)).values
+        self._set_series(peaks)
 
     def select_peaks(self) -> None:
-        """Chooses the peak flux of each event and channel group (df_optimals): the highest of the viewings at the
+        """Chooses the peak flux of each event and channel group (df_results): the highest of the viewings at the
         resolution of the chosen onset"""
-        for event_no in self.df_optimals.index:
-            for particle, sensor, mevlbl in self._iter_channels():
-                self._select_peak(event_no, particle, sensor, mevlbl)
-
-    def _select_peak(self, event_no: int, particle: str, sensor: str, mevlbl: str) -> None:
-        """Chooses the peak flux of one event and channel group"""
-        column = (particle, sensor, mevlbl, "Peak Flux")
-        resample_freq = self.df_optimals.loc[event_no, (particle, sensor, mevlbl, "Onset Time", "Resolution")]
-        max_pf = None
-        best_viewing = None
-        if not pd.isna(resample_freq):
-            for viewing in self.params.viewings:
-                pf = self.dfs_events[particle][sensor][resample_freq].loc[event_no, (viewing, mevlbl, "Peak Flux")]
-                if not pd.isna(pf) and (pd.isna(max_pf) or pf > max_pf):
-                    max_pf = pf
-                    best_viewing = viewing
-        if pd.isna(max_pf):
-            for field in ("Resolution", "Viewing", "Peak Flux", "Peak Flux Time"):
-                self.df_optimals.loc[event_no, (*column, field)] = None
-            return
-        self.df_optimals.loc[event_no, (*column, "Resolution")] = resample_freq
-        self.df_optimals.loc[event_no, (*column, "Viewing")] = best_viewing
-        self.df_optimals.loc[event_no, (*column, "Peak Flux")] = max_pf
-        self.df_optimals.loc[event_no, (*column, "Peak Flux Time")] = \
-            self.dfs_events[particle][sensor][resample_freq].loc[event_no, (best_viewing, mevlbl, "Peak Flux Time")]
+        self._set_results({key: choose_peak(rows, self._chosen(*key, "Onset Resolution"))
+                           for key, rows in self._iter_channel_rows()})
 
     def run_fluences(self) -> None:
         """Calculates the fluence of every resolution in the viewing of the chosen peak, and chooses one per event and
@@ -600,61 +561,33 @@ class SEPPACT:
         self.select_fluences()
 
     def calculate_fluences(self) -> None:
-        """Calculates the fluence of every resolution and viewing (dfs_events), without the spikes"""
+        """Calculates the fluence of every series (df_series) of the channel groups with a peak flux, from the chosen
+        onset to the end of the analysis, without the spikes"""
         p = self.params
-        for particle, sensor, resample_freq in self._iter_series():
-            df_events = self.dfs_events[particle][sensor][resample_freq]
-            for i, viewing, mevlbl, df_flux in self._iter_event_series(particle, sensor, resample_freq):
-                pf = self.df_optimals.loc[i, (particle, sensor, mevlbl, "Peak Flux", "Peak Flux")]
-                if pd.isna(pf):
-                    for field in ("Fluence", "Fluence Start", "Fluence End", "Fluence Threshold"):
-                        df_events.loc[i, (viewing, mevlbl, field)] = None
-                    continue
-                onset = self._onset(i, particle, sensor, mevlbl)
-                pft = self.df_optimals.loc[i, (particle, sensor, mevlbl, "Peak Flux", "Peak Flux Time")]
-                enddate = self._analysis_end(i, onset)
-                ts = self._series_after_onset(df_flux, i, viewing, mevlbl, onset, enddate)
-                ts = self._without_spikes(ts, i, particle, sensor, resample_freq, viewing, mevlbl)
-                values = fluence_interval(ts, onset, pft, enddate, p.fluence_peak_fraction, p.fluence_points)
-                for field, value in zip(("Fluence", "Fluence Start", "Fluence End", "Fluence Threshold"), values):
-                    df_events.loc[i, (viewing, mevlbl, field)] = value
-            df_events.sort_index(axis="columns", inplace=True)
+        spikes = self._spike_lists()
+        fluences = {column: [] for column in FLUENCE_COLUMNS}
+        for key in self.df_series.index:
+            event_no, particle, sensor, mevlbl, resample_freq, viewing = key
+            values = (None, None, None, None)
+            if not pd.isna(self._chosen(event_no, particle, sensor, mevlbl, "Peak Flux")):
+                onset = self._onset(event_no, particle, sensor, mevlbl)
+                enddate = self._analysis_end(event_no, onset)
+                ts = remove_spikes(self._flux(*key)[onset:enddate], spikes.get(key, []), resample_freq)
+                values = fluence_interval(ts, onset, self._chosen(event_no, particle, sensor, mevlbl, "Peak Flux Time"),
+                                          enddate, p.fluence_peak_fraction, p.fluence_points)
+            for column, value in zip(FLUENCE_COLUMNS, values):
+                fluences[column].append(value)
+        for column in ("Fluence", "Fluence Threshold"):
+            fluences[column] = pd.array(fluences[column], dtype="float64")
+        for column in ("Fluence Start", "Fluence End"):
+            fluences[column] = pd.to_datetime(pd.Series(fluences[column], dtype=object)).values
+        self._set_series(fluences)
 
     def select_fluences(self) -> None:
-        """Chooses the fluence of each event and channel group (df_optimals): the largest of the resolutions in the
+        """Chooses the fluence of each event and channel group (df_results): the largest of the resolutions in the
         viewing of the chosen peak, among those that do not start before the onset"""
-        for event_no in self.df_optimals.index:
-            for particle, sensor, mevlbl in self._iter_channels():
-                self._select_fluence(event_no, particle, sensor, mevlbl)
-
-    def _select_fluence(self, event_no: int, particle: str, sensor: str, mevlbl: str) -> None:
-        """Chooses the fluence of one event and channel group"""
-        column = (particle, sensor, mevlbl, "Fluence")
-        onset = self._onset(event_no, particle, sensor, mevlbl)
-        viewing = self.df_optimals.loc[event_no, (particle, sensor, mevlbl, "Peak Flux", "Viewing")]
-        max_fluence = None
-        best_res = None
-        if not (pd.isna(viewing) or pd.isna(onset)):
-            for resample_freq in self.params.resample_freqs:
-                df_events = self.dfs_events[particle][sensor][resample_freq]
-                fluence = df_events.loc[event_no, (viewing, mevlbl, "Fluence")]
-                if pd.isna(fluence) or df_events.loc[event_no, (viewing, mevlbl, "Fluence Start")] < onset:
-                    continue
-                if pd.isna(max_fluence) or fluence > max_fluence:
-                    max_fluence = fluence
-                    best_res = resample_freq
-        fields = ("Fluence Start", "Fluence End", "Fluence Threshold")
-        if best_res is None:
-            for field in ("Resolution", "Fluence") + fields:
-                self.df_optimals.loc[event_no, (*column, field)] = None
-            self.df_optimals.loc[event_no, (*column, "Viewing")] = None if pd.isna(viewing) or pd.isna(onset) else viewing
-            return
-        self.df_optimals.loc[event_no, (*column, "Resolution")] = best_res
-        self.df_optimals.loc[event_no, (*column, "Viewing")] = viewing
-        self.df_optimals.loc[event_no, (*column, "Fluence")] = max_fluence
-        for field in fields:
-            self.df_optimals.loc[event_no, (*column, field)] = \
-                self.dfs_events[particle][sensor][best_res].loc[event_no, (viewing, mevlbl, field)]
+        self._set_results({key: choose_fluence(rows, self._onset(*key), self._chosen(*key, "Peak Flux Viewing"))
+                           for key, rows in self._iter_channel_rows()})
 
     def plot_events(self) -> None:
         """Writes the plot of each event to dir_plots"""
@@ -662,7 +595,7 @@ class SEPPACT:
 
         from .views import event_plot_filename, plot_event
         os.makedirs(self.params.dir_plots, exist_ok=True)
-        for event_no in self.df_optimals.index:
+        for event_no in self.events.index:
             fig = plot_event(self, event_no, filename=pjoin(self.params.dir_plots, event_plot_filename(self, event_no)))
             plt.close(fig)
 
@@ -677,18 +610,16 @@ class SEPPACT:
         return float(str(low)), float(str(high))
 
     def results_table(self) -> pd.DataFrame:
-        """Returns df_optimals as a long table: one row per event and channel group, with the resolutions in minutes"""
-        rows = []
-        for event_no in self.df_optimals.index:
-            for particle, sensor, mevlbl in self._iter_channels():
-                low, high = self.group_energies(particle, sensor, mevlbl)
-                row = {"Event No": event_no, "Particle": particle, "Sensor": sensor, "Energy Label": mevlbl,
-                       "Low Energy": low, "High Energy": high}
-                for (quantity, field), column in RESULT_COLUMNS.items():
-                    value = self.df_optimals.loc[event_no, (particle, sensor, mevlbl, quantity, field)]
-                    row[column] = value.total_seconds()/60 if isinstance(value, timedelta) else value
-                rows.append(row)
-        return pd.DataFrame(rows)
+        """Returns df_results as the table of results.csv: one row per event and channel group, with the energy range
+        of the group and the resolutions in minutes"""
+        table = self.df_results[RESULT_COLUMNS].reset_index()
+        channels = zip(table["Particle"], table["Sensor"], table["Energy Label"])
+        energies = [self.group_energies(*channel) for channel in channels]
+        table.insert(4, "Low Energy", [low for low, _ in energies])
+        table.insert(5, "High Energy", [high for _, high in energies])
+        for column in ("Onset Resolution", "Peak Flux Resolution", "Fluence Resolution"):
+            table[column] = pd.to_timedelta(table[column]).dt.total_seconds() / 60
+        return table
 
     def save_results(self) -> None:
         """Writes results.csv, the long table of results_table(), to dir_outputs"""

@@ -42,6 +42,14 @@ DECAY = timedelta(hours=4)
 N_CHANNELS = {"protons": 36, "electrons": 4}        # HET channels
 
 
+def channel_rows(rows: dict) -> pd.DataFrame:
+    """Returns rows of df_series of a channel group, indexed by (resolution, viewing) in the given order, from
+    {(minutes, viewing): {column: value}}"""
+    index = pd.MultiIndex.from_tuples([(pd.Timedelta(minutes=m), viewing) for m, viewing in rows],
+                                      names=["Resolution", "Viewing"])
+    return pd.DataFrame(list(rows.values()), index=index)
+
+
 def make_params(tmp_path, **parameters) -> SEPPACT_parameters:
     """Returns parameters with all the folders in tmp_path (the inputs folder is created)"""
     folders = {name: str(tmp_path / name) for name in ("inputs", "data", "intermediate_states", "plots", "outputs")}

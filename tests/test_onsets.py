@@ -5,8 +5,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from spearhead.sep_pact.analysis import onset_detection_sigma, quality_analysis, reference_iter
-from tests.helpers import T0, VIEWINGS, synthetic_tool
+from spearhead.sep_pact.analysis import choose_onset, onset_detection_sigma, quality_analysis, reference_iter
+from tests.helpers import T0, VIEWINGS, channel_rows, synthetic_tool
 
 MINUTE = timedelta(minutes=1)
 
@@ -82,9 +82,9 @@ def test_reference_iter_puts_the_reference_first():
     assert reference_iter(["protons", "electrons"], None) == ["protons", "electrons"]
 
 
-def onset(tool, particle, group, field="Onset Time"):
-    """Returns a field of the chosen onset of the synthetic event"""
-    return tool.df_optimals.loc[1, (particle, "HET", group, "Onset Time", field)]
+def onset(tool, particle, group, column="Onset Time"):
+    """Returns a column of the chosen onset of the synthetic event"""
+    return tool.df_results.loc[(1, particle, "HET", group), column]
 
 
 def test_onset_of_the_finest_resolution_and_earliest_viewing(tmp_path, monkeypatch):
@@ -94,10 +94,10 @@ def test_onset_of_the_finest_resolution_and_earliest_viewing(tmp_path, monkeypat
     tool = synthetic_tool(tmp_path, monkeypatch, rises)
     tool.run_onsets()
     assert onset(tool, "electrons", "1 MeV") == pd.Timestamp(T0 - timedelta(minutes=2))
-    assert onset(tool, "electrons", "1 MeV", "Resolution") == timedelta(minutes=2)
-    assert onset(tool, "electrons", "1 MeV", "Viewing") == "north"
+    assert onset(tool, "electrons", "1 MeV", "Onset Resolution") == timedelta(minutes=2)
+    assert onset(tool, "electrons", "1 MeV", "Onset Viewing") == "north"
     assert onset(tool, "protons", "8 MeV") == pd.Timestamp(T0 + timedelta(minutes=2))
-    assert onset(tool, "protons", "8 MeV", "Viewing") == "south"
+    assert onset(tool, "protons", "8 MeV", "Onset Viewing") == "south"
     assert not onset(tool, "protons", "8 MeV", "Onset Copied")
     assert not onset(tool, "protons", "8 MeV", "Onset at BG End")
 
@@ -108,7 +108,7 @@ def test_onsets_outside_the_reference_window_are_ignored(tmp_path, monkeypatch):
     tool = synthetic_tool(tmp_path, monkeypatch, rises)
     tool.run_onsets()
     assert pd.isna(onset(tool, "protons", "8 MeV"))
-    assert pd.isna(onset(tool, "protons", "8 MeV", "Resolution"))
+    assert pd.isna(onset(tool, "protons", "8 MeV", "Onset Resolution"))
 
 
 def test_onset_copied_from_the_reference_channel(tmp_path, monkeypatch):
@@ -131,8 +131,7 @@ def test_onset_at_the_end_of_the_background(tmp_path, monkeypatch):
 def test_quality_of_the_chosen_onset(tmp_path, monkeypatch):
     tool = synthetic_tool(tmp_path, monkeypatch)
     tool.run_onsets()
-    quality = {field: tool.df_ts_quality.loc[1, ("electrons", "HET", "1 MeV", field)]
-               for field in ("Length", "Zeroes", "Ratio")}
+    quality = {field: onset(tool, "electrons", "1 MeV", f"Quality {field}") for field in ("Length", "Zeroes", "Ratio")}
     assert quality["Zeroes"] == 0 and quality["Ratio"] == 0
     # from the onset (T0 - 2 min) to the last bin of the data (end time - 2 min), every 2 minutes
     assert quality["Length"] == 48 * 60 // 2 + 1
@@ -141,4 +140,71 @@ def test_quality_of_the_chosen_onset(tmp_path, monkeypatch):
 def test_onset_after_a_shock_ends_at_the_shock(tmp_path, monkeypatch):
     tool = synthetic_tool(tmp_path, monkeypatch, shocks=[T0 + timedelta(hours=6)])
     tool.run_onsets()
-    assert tool.df_ts_quality.loc[1, ("electrons", "HET", "1 MeV", "Length")] == (6 * 60 + 2) // 2 + 1
+    assert onset(tool, "electrons", "1 MeV", "Quality Length") == (6 * 60 + 2) // 2 + 1
+
+
+def onset_row(minutes_after_t0, usable=True, copied=False):
+    return {"Onset Time": pd.Timestamp(T0 + timedelta(minutes=minutes_after_t0)), "Usable": usable,
+            "Onset Copied": copied, "Quality Length": 100, "Quality Zeroes": 0, "Quality Ratio": 0.0}
+
+
+WINDOW = timedelta(hours=2.5)
+
+
+def test_choose_onset_of_equal_onsets_keeps_the_first_viewing():
+    rows = channel_rows({(2, "sun"): onset_row(10), (2, "north"): onset_row(4), (2, "south"): onset_row(4),
+                         (5, "sun"): onset_row(0)})
+    chosen = choose_onset(rows, pd.NaT, WINDOW, T0 - timedelta(hours=1))
+    assert chosen["Onset Resolution"] == timedelta(minutes=2)
+    assert chosen["Onset Viewing"] == "north"
+    assert chosen["Onset Time"] == pd.Timestamp(T0 + timedelta(minutes=4))
+
+
+def test_choose_onset_at_the_finest_usable_resolution():
+    rows = channel_rows({(2, "sun"): onset_row(0, usable=False), (5, "sun"): onset_row(5), (5, "north"): onset_row(10),
+                         (10, "sun"): onset_row(1)})
+    chosen = choose_onset(rows, pd.NaT, WINDOW, T0 - timedelta(hours=1))
+    assert (chosen["Onset Resolution"], chosen["Onset Viewing"]) == (timedelta(minutes=5), "sun")
+    assert chosen["Quality Length"] == 100
+
+
+def test_choose_onset_within_the_window_of_the_reference_onset():
+    rows = channel_rows({(2, "sun"): onset_row(0), (5, "sun"): onset_row(200)})
+    chosen = choose_onset(rows, pd.Timestamp(T0 + timedelta(hours=4)), WINDOW, T0 - timedelta(hours=1))
+    assert chosen["Onset Resolution"] == timedelta(minutes=5)
+    rows = channel_rows({(2, "sun"): onset_row(0)})
+    chosen = choose_onset(rows, pd.Timestamp(T0 + timedelta(hours=3)), WINDOW, T0 - timedelta(hours=1))
+    assert pd.isna(chosen["Onset Time"]) and pd.isna(chosen["Onset Resolution"]) and chosen["Onset Viewing"] is None
+    assert chosen["Onset Copied"] is None and pd.isna(chosen["Quality Length"])
+
+
+def test_choose_onset_flags():
+    rows = channel_rows({(2, "sun"): onset_row(0, copied=True)})
+    chosen = choose_onset(rows, pd.NaT, WINDOW, T0)
+    assert chosen["Onset Copied"] is True and chosen["Onset at BG End"] is True
+    chosen = choose_onset(rows, pd.NaT, WINDOW, T0 - timedelta(minutes=1))
+    assert chosen["Onset at BG End"] is False
+
+
+def test_series_of_other_particles_take_the_reference_onset(tmp_path, monkeypatch):
+    rises = {("electrons", viewing): T0 for viewing in VIEWINGS}  # flat protons
+    tool = synthetic_tool(tmp_path, monkeypatch, rises)
+    tool.calculate_onsets()
+    series = tool.df_series.reset_index()
+    reference = series[series["Energy Label"] == "1 MeV"].set_index(["Resolution", "Viewing"])["Onset Time"]
+    protons = series[series["Particle"] == "protons"]
+    assert protons["Onset Copied"].all()
+    for _, row in protons.iterrows():
+        assert row["Onset Time"] == reference[(row["Resolution"], row["Viewing"])]
+    assert not series[series["Particle"] == "electrons"]["Onset Copied"].any()
+
+
+def test_series_without_an_onset_are_not_usable(tmp_path, monkeypatch):
+    tool = synthetic_tool(tmp_path, monkeypatch, rises={})  # flat electrons and protons
+    tool.run_onsets()
+    assert tool.df_series["Onset Time"].isna().all()
+    assert not tool.df_series["Usable"].any()
+    # without a reference onset, nothing is copied
+    assert not tool.df_series["Onset Copied"].any()
+    assert tool.df_series["Quality Length"].isna().all()
+    assert tool.df_results["Onset Time"].isna().all() and tool.df_results["Onset Viewing"].isna().all()
