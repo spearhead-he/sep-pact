@@ -17,7 +17,7 @@ from tests.helpers import OFFSET, T0, FakeEPD, epd_energies, make_params, profil
 @pytest.fixture
 def events(tmp_path):
     params = make_params(tmp_path)
-    return read_events(write_events(tmp_path / "inputs", {1: {"Onset Time": T0}}), params)
+    return read_events(write_events(tmp_path / "inputs", {1: {"Reference Time": T0}}), params)
 
 
 def test_channel_layout():

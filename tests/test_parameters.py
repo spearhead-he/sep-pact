@@ -1,5 +1,5 @@
 """Tests of SEPPACT_parameters: defaults, checks of the values and of the parameters that depend on each other"""
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -55,7 +55,9 @@ def test_unknown_keyword_fails():
     ("fallback_viewing", "up", ValueError, "fallback_viewing must be one of"),
     ("resample_freqs", [timedelta(minutes=30), timedelta(minutes=2)], ValueError, "ascending order"),
     ("resample_freqs", [5], TypeError, "list of datetime.timedelta"),
-    ("bg_end_before_onset", 5, TypeError, "bg_end_before_onset must be a datetime.timedelta"),
+    ("bg_end_after_start", 5, TypeError, "bg_end_after_start must be a datetime.timedelta"),
+    ("date_ranges", [(1, 2)], TypeError, "list of \\(start, end\\) datetime pairs"),
+    ("date_ranges", [(datetime(2021, 1, 2), datetime(2021, 1, 1))], ValueError, "Event 1 of date_ranges: the start"),
     ("onset_points", 0, ValueError, "at least 1"),
     ("fluence_points", 1.5, ValueError, "at least 1"),
     ("download_tries", 0, ValueError, "at least 1"),
@@ -133,3 +135,17 @@ def test_panel_height_out_of_range(value):
 def test_panel_height_in_range(value):
     p = SEPPACT_parameters(panel_height=value)
     assert p.panel_height == value
+
+
+@pytest.mark.parametrize("name, replacement", [("bg_start_before_onset", "start_before_reference"),
+                                               ("bg_end_before_onset", "bg_end_after_start"),
+                                               ("end_after_onset", "end_after_reference")])
+def test_onset_windows_are_removed(name, replacement):
+    p = SEPPACT_parameters()
+    with pytest.raises(AttributeError, match=f"The {name} parameter was removed in 0.2.0.*{replacement}"):
+        setattr(p, name, timedelta(hours=1))
+
+
+def test_default_background_in_order():
+    with pytest.raises(ValueError, match="bg_start_after_start .* must be before bg_end_after_start"):
+        SEPPACT_parameters(bg_start_after_start=timedelta(hours=2), bg_end_after_start=timedelta(hours=1))

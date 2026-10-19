@@ -155,8 +155,14 @@ class FakeEPD:
         return frames["protons"], frames["electrons"], epd_energies(self.proton_prefix)
 
 
-T0 = datetime(2021, 1, 1, 12, 0)  # onset time of the synthetic event in the event list
+T0 = datetime(2021, 1, 1, 12, 0)  # reference time of the synthetic event in the event list, where it rises
 VIEWINGS = ("sun", "asun", "north", "south")
+
+
+def bg_end_event(bg_end: datetime) -> dict:
+    """Returns an event of the event list with the windows of the default event (Reference Time T0), but the
+    background ending at bg_end"""
+    return {"Start Time": T0 - timedelta(hours=2), "BG End": bg_end, "End Time": T0 + timedelta(hours=48)}
 
 
 def synthetic_tool(tmp_path,
@@ -176,7 +182,7 @@ def synthetic_tool(tmp_path,
         rises = {(particle, viewing): T0 for particle in ("electrons", "protons") for viewing in VIEWINGS}
     monkeypatch.setattr(data, "epd_load", fake or FakeEPD(rises))
     params = make_params(tmp_path, **parameters)
-    write_events(tmp_path / "inputs", events or {1: {"Onset Time": T0}})
+    write_events(tmp_path / "inputs", events or {1: {"Reference Time": T0}})
     write_shocks(tmp_path / "inputs", shocks or [datetime(2000, 1, 1)])
     tool = SEPPACT(params)
     tool.run_inputs()

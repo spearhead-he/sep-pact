@@ -39,14 +39,16 @@ All the parameters are in the form at the top of the notebook (`tool.parameters_
 
 | Field | Parameter | Default | Description |
 |---|---|---|---|
-| Event list | `file_events` | `inputs/events_example.csv` | Path of the [event list](#event-list). Below the path, the number of events and the range of their onsets, or why the file cannot be read |
+| Event list | `file_events` | `inputs/events_example.csv` | Path of the [event list](#event-list). Below the path, the number of events, the layout of the list and the range of the events, or why the file cannot be read. Leave it blank to use the date ranges |
+| Date ranges | `date_ranges` | none | The start and end of each event, used without an event list; "Add event" and "Remove event" add and remove events |
 | Shock list | `file_shocks` | `inputs/shocks.dat` | Path of the [shock list](#shock-list), with its number of shocks |
-| Background start before the onset (hours) | `bg_start_before_onset` | 2 h | Start of the background window, before the onset of the event list |
-| Background end before the onset (minutes) | `bg_end_before_onset` | 5 min | End of the background window, before the onset of the event list |
-| End after the onset (hours) | `end_after_onset` | 48 h | End of the event, after the onset of the event list |
-| Shortest data period (days) | `min_plot_window` | 2 days | Minimum length of the data period (background start to end); shorter events are extended equally on both sides |
+| Data start before the Reference Time (hours) | `start_before_reference` | 2 h | For event lists with a Reference Time: the Start Time of each event |
+| Data end after the Reference Time (hours) | `end_after_reference` | 48 h | For event lists with a Reference Time: the End Time of each event |
+| Default background start after the Start Time (minutes) | `bg_start_after_start` | 0 | Start of the background window of the events without one |
+| Default background end after the Start Time (minutes) | `bg_end_after_start` | 115 min | End of the background window of the events without one |
+| Shortest data period (days) | `min_plot_window` | 2 days | Minimum length of the data period (Start Time to End Time); shorter events are extended equally on both sides, so that the peak flux and the fluence can be measured over the rest of the event |
 
-The event windows are used where the event list leaves the background window or the end time empty.
+With the defaults, an event with a Reference Time has data from 2 hours before to 48 hours after it, and a background window from 2 hours to 5 minutes before it.
 
 ### Data tab
 
@@ -120,23 +122,43 @@ In scripts, the parameters are the arguments of `SEPPACT_parameters`; see the [l
 
 ### Event list
 
-A CSV file, given by its path in the form (see `inputs/events_example.csv`), with one row per event:
+A CSV file, given by its path in the form, with one row per event. The first column is the event number (`Event No`), used in the tables and the plot names. The other columns are one of these layouts, the same as in the SPEARHEAD VDA tool:
 
-```
-Event No,Onset Time,BG Start,BG End
-20,2021-11-01 02:05:00,2021-10-31 19:00:00,2021-11-01 01:30:00
-```
-
-
-| Column | Required | Description |
+| Layout | Columns after `Event No` | Example in `inputs/` |
 |---|---|---|
-| `Event No` | yes | Event number, the first column; used in the tables and the plot names |
-| `Onset Time` | yes | Approximate onset of the event; only used for the default windows below |
-| `BG Start` | no | Start of the background window; default `Onset Time` − `bg_start_before_onset` |
-| `BG End` | no | End of the background window; default `Onset Time` − `bg_end_before_onset` |
-| `End Time` | no | End of the event; default `Onset Time` + `end_after_onset` |
+| Reference times | `Reference Time` | `reference_times_example.csv` |
+| Datetime ranges | `Start Time`, `End Time` | `datetime_range_only_example.csv` |
+| Datetime ranges with the background end | `Start Time`, `BG End`, `End Time` | `datetime_range_example.csv` |
+| Datetime ranges with the background window | `Start Time`, `BG Start`, `BG End`, `End Time` | `events_example.csv` |
 
-The columns `BG Start`, `BG End` and `End Time` may be missing or have empty cells. The times are in UTC, as `YYYY-MM-DD HH:MM:SS` or `YYYY-MM-DD HH:MM` (ISO 8601). Spaces after the commas are allowed. The onset itself is always detected in the data, after `BG End`.
+```
+Event No,Start Time,BG Start,BG End,End Time
+20,2021-10-31 19:00:00,2021-10-31 19:00:00,2021-11-01 01:30:00,2021-11-03 02:05:00
+```
+
+- `Start Time` and `End Time`: the data range of the event. With a `Reference Time` (an approximate time of the event, e.g. its onset or a flare), they are `start_before_reference` before and `end_after_reference` after it.
+- `BG Start` and `BG End`: the background window. Without them, or with empty cells, the window is the default one, `bg_start_after_start` to `bg_end_after_start` after the Start Time. With only `BG End`, the window starts at the Start Time.
+- The times of each event must be in the order Start Time ≤ BG Start < BG End < End Time; an event list with an event out of order is not read, and the error names the event.
+- The data range is extended to `min_plot_window` if it is shorter; the onset itself is always detected in the data, after `BG End`.
+
+The times are in UTC, as `YYYY-MM-DD HH:MM:SS` or `YYYY-MM-DD HH:MM` (ISO 8601). The columns may be in any order, and spaces after the commas are allowed.
+
+Without an event list, the events are the date ranges of the form (`date_ranges`), with the default background window.
+
+Event lists with an `Onset Time`, as in earlier versions, are not accepted. To convert one, with the windows it had (empty cells were 2 hours and 5 minutes before the onset, and 48 hours after it):
+
+```python
+from datetime import timedelta
+import pandas as pd
+
+old = pd.read_csv("my_events.csv", index_col=0).apply(pd.to_datetime, format="ISO8601")
+onset = old["Onset Time"]
+bg_start = old.get("BG Start", pd.Series(pd.NaT, index=old.index)).fillna(onset - timedelta(hours=2))
+new = pd.DataFrame({"Start Time": bg_start, "BG Start": bg_start,
+                    "BG End": old.get("BG End", pd.Series(pd.NaT, index=old.index)).fillna(onset - timedelta(minutes=5)),
+                    "End Time": old.get("End Time", pd.Series(pd.NaT, index=old.index)).fillna(onset + timedelta(hours=48))})
+new.to_csv("my_events_new.csv", date_format="%Y-%m-%d %H:%M:%S")
+```
 
 Event lists in Excel (`.xlsx`), as in version 0.1.0, are no longer accepted. To convert one, save it as CSV in Excel or a spreadsheet program, or with pandas:
 
