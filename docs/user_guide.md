@@ -2,22 +2,24 @@
 
 - [Overview](#overview)
 - [Parameters](#parameters)
-  - [Files and folders](#files-and-folders)
-  - [Event windows](#event-windows)
-  - [Data](#data)
-  - [Onset](#onset)
-  - [Data quality](#data-quality)
-  - [Spikes, peak and fluence](#spikes-peak-and-fluence)
-  - [Plot parameters](#plot-parameters)
+  - [Events tab](#events-tab)
+  - [Data tab](#data-tab)
+  - [Energy channels tab](#energy-channels-tab)
+  - [Onsets tab](#onsets-tab)
+  - [Peak and fluence tab](#peak-and-fluence-tab)
+  - [Plots and outputs tab](#plots-and-outputs-tab)
+  - [Parameters in scripts](#parameters-in-scripts)
 - [Input files](#input-files)
   - [Event list](#event-list)
   - [Shock list](#shock-list)
 - [Steps of the notebook](#steps-of-the-notebook)
   - [Data](#data-step)
+  - [Analysis](#analysis-step)
   - [Onset](#onset-step)
   - [Spikes](#spikes-step)
   - [Peak flux](#peak-flux-step)
   - [Fluence](#fluence-step)
+  - [Events](#events-step)
 - [Results](#results)
   - [results.csv](#resultscsv)
   - [Units](#units)
@@ -27,45 +29,48 @@
 
 SEP-PACT analyses the events of an event list with the data of Solar Orbiter EPD/HET (level 2). For each event and energy channel group, it calculates the onset time, the peak flux and the fluence at every resolution and viewing, and chooses one result of each.
 
-The notebook `sep-pact.ipynb` runs the whole analysis. Set the parameters in its parameters cell, then run all the cells in order. The plots are written to `plots/`, and the result tables to `outputs/`.
+The notebook `sep-pact.ipynb` runs the whole analysis. Set the parameters in its form, then run the cells in order. The results are written to `outputs/results.csv`, and the plots to `plots/`.
 
 ## Parameters
 
-All the parameters are in the parameters cell at the top of the notebook, as the arguments of `SEPPACT_parameters`. A parameter left out keeps its default; the defaults are listed below. An unknown parameter name or an invalid value raises an error that names the valid choices.
+All the parameters are in the form at the top of the notebook (`tool.parameters_form()`), in tabs. A value that is not accepted, e.g. a fraction above 1 or a missing event list, is shown in red below its field and keeps the previous value; the steps do not run until it is corrected. The parameter names below are those of `SEPPACT_parameters`, for [scripts](#parameters-in-scripts).
 
-### Files and folders
+### Events tab
 
-| Parameter | Default | Description |
-|---|---|---|
-| `dir_data` | `"data"` | Folder of the downloaded EPD files |
-| `dir_saves` | `"intermediate_states"` | Folder of the cached flux |
-| `dir_plots` | `"plots"` | Folder of the plots, one per event |
-| `dir_outputs` | `"outputs"` | Folder of the result tables |
-| `file_events` | `"inputs/events_example.csv"` | Path of the [event list](#event-list) |
-| `file_shocks` | `"inputs/shocks.dat"` | Path of the [shock list](#shock-list) |
+| Field | Parameter | Default | Description |
+|---|---|---|---|
+| Event list | `file_events` | `inputs/events_example.csv` | Path of the [event list](#event-list). Below the path, the number of events and the range of their onsets, or why the file cannot be read |
+| Shock list | `file_shocks` | `inputs/shocks.dat` | Path of the [shock list](#shock-list), with its number of shocks |
+| Background start before the onset (hours) | `bg_start_before_onset` | 2 h | Start of the background window, before the onset of the event list |
+| Background end before the onset (minutes) | `bg_end_before_onset` | 5 min | End of the background window, before the onset of the event list |
+| End after the onset (hours) | `end_after_onset` | 48 h | End of the event, after the onset of the event list |
+| Shortest data period (days) | `min_plot_window` | 2 days | Minimum length of the data period (background start to end); shorter events are extended equally on both sides |
 
-### Event windows
+The event windows are used where the event list leaves the background window or the end time empty.
 
-These are used where the event list leaves the background window or the end time empty.
+### Data tab
 
-| Parameter | Default | Description |
-|---|---|---|
-| `bg_start_before_onset` | 2 h | Start of the background window, before the onset of the event list |
-| `bg_end_before_onset` | 5 min | End of the background window, before the onset of the event list |
-| `end_after_onset` | 48 h | End of the event, after the onset of the event list |
-| `min_plot_window` | 2 days | Minimum length of the data period (background start to end); shorter events are extended equally on both sides |
+| Field | Parameter | Default | Description |
+|---|---|---|---|
+| Viewings | `viewings` | sun, asun, north, south | HET viewing directions |
+| Resolutions | `resample_freqs` | 2, 5, 10, 30 min | Resolutions of the analysis, chosen from 1, 2, 5, 10, 15, 30 and 60 min |
+| Spike threshold | `spike_thresholds` | 2.0 (2 and 5 min), 2.5 (10 min), 3.0 (30 min) | Smallest difference, in orders of magnitude, of a spike from both its neighbours, for each resolution |
+| Data folder | `dir_data` | `data` | Folder of the downloaded EPD files |
+| Cache folder | `dir_saves` | `intermediate_states` | Folder of the cached flux |
+| Download tries | `download_tries` | 2 | Tries of each download; the tries after the first load only the background start to the end time |
 
-### Data
+The data level is `l2` (`level`).
 
-| Parameter | Default | Description |
-|---|---|---|
-| `level` | `"l2"` | EPD data level |
-| `viewings` | `["sun", "asun", "north", "south"]` | HET viewing directions |
-| `resample_freqs` | 2, 5, 10, 30 min | Resolutions, in ascending order |
-| `group_options` | see below | Energy channel groups |
-| `download_tries` | 2 | Tries of each download; the tries after the first load only the background start to the end time |
+### Energy channels tab
 
-`group_options` has one entry per particle (`"electrons"`, `"protons"`) and, in it, one entry per channel group. The name of a group is its label in the plots and tables. Each group has the sensor (`"HET"`) and the HET channel numbers it combines. The flux of a group is the mean of its channels weighted by their energy widths. One group may be marked as the reference channel with `"reference_channel": True` (see [Onset](#onset-step)).
+One row per channel group (`group_options`), in the order of the panels of the plots:
+- the particle;
+- the label: the name of the group in the plots and in `results.csv`, unique for the particle;
+- the HET channels it combines, listed with their energy ranges (select several with Ctrl+click). The flux of a group is the mean of its channels weighted by their energy widths;
+- "Reference channel": at most one group (see [Onset](#onset-step));
+- "Remove", and the buttons "Add electron group" and "Add proton group" above the groups.
+
+The energy ranges of the channels are read from the data of the first event of the event list. If they cannot be read, e.g. without a connection to the data server, the groups are listed without the editor, with the error and a button to read the channels again.
 
 The default groups are:
 
@@ -77,41 +82,44 @@ The default groups are:
 | protons | `25 MeV` | 18, 19 |
 | protons | `50 MeV` | 27 |
 
-### Onset
+### Onsets tab
 
-| Parameter | Default | Description |
-|---|---|---|
-| `onset_sigma` | 2 | Threshold = background mean + `onset_sigma` × background standard deviation |
-| `onset_points` | 3 | Consecutive points above the threshold that make an onset |
-| `reference_onset_window` | 2.5 h | Onsets further than this from the onset of the reference channel are ignored |
+| Field | Parameter | Default | Description |
+|---|---|---|---|
+| Threshold, in standard deviations above the background | `onset_sigma` | 2 | Threshold = background mean + `onset_sigma` × background standard deviation |
+| Consecutive points above the threshold | `onset_points` | 3 | Points above the threshold that make an onset |
+| Largest distance from the reference onset (hours) | `reference_onset_window` | 2.5 h | Onsets further than this from the onset of the reference channel are ignored |
+| Largest ratio of transitions to zero or missing values | `quality_tolerance` | 0.1 | Allowed ratio of transitions from valid to zero or NaN values after the onset, to the number of points |
+| Tolerance grows with the resolution | `quality_adjustable` | off | If on, the tolerance is multiplied by 1 + resolution / 60 min |
 
-### Data quality
+### Peak and fluence tab
 
-| Parameter | Default | Description |
-|---|---|---|
-| `quality_tolerance` | 0.1 | Allowed ratio of transitions from valid to zero or NaN values after the onset, to the number of points |
-| `quality_adjustable` | `False` | If `True`, the tolerance grows with the resolution: it is multiplied by 1 + resolution / 60 min |
+| Field | Parameter | Default | Description |
+|---|---|---|---|
+| Search in the first half of the event if it is at least (hours) | `peak_window_min` | 10 h | Spikes and peaks are searched in the first half of the onset to the end, if that half is at least this long |
+| Fluence threshold, as a fraction of the peak flux | `fluence_peak_fraction` | 0.5 | The fluence threshold is this fraction of the peak flux |
+| Consecutive points at or below the threshold that bound the interval | `fluence_points` | 2 | Consecutive points at or below the fluence threshold that bound the fluence interval |
 
-### Spikes, peak and fluence
+The fluence is the integral of the flux over an interval around the peak: from where the flux last rises above the fluence threshold before the peak, to where it first falls back to it after the peak (see [Fluence](#fluence-step)).
 
-| Parameter | Default | Description |
-|---|---|---|
-| `spike_thresholds` | 2.0 (2 and 5 min), 2.5 (10 min), 3.0 (30 min) | Smallest difference, in orders of magnitude, of a spike from both its neighbours, per resolution. Each resolution of `resample_freqs` needs a threshold. |
-| `peak_window_min` | 10 h | Spikes and peaks are searched in the first half of the onset to the end, if that half is at least this long |
-| `fluence_peak_fraction` | 0.5 | The fluence interval is bounded where the flux falls below this fraction of the peak flux |
-| `fluence_points` | 2 | Consecutive points below that threshold that bound the fluence interval |
+### Plots and outputs tab
 
-### Plot parameters
+| Field | Parameter | Default | Description |
+|---|---|---|---|
+| Viewing of channel groups without an onset | `fallback_viewing` | sun | Viewing shown, at the coarsest resolution, for a channel group without an onset |
+| Save the plots of the events | | on | Whether the results step also writes the plots (see [Results](#results)) |
+| Plots folder | `dir_plots` | `plots` | Folder of the plots, one per event |
+| Results folder | `dir_outputs` | `outputs` | Folder of `results.csv` |
 
-| Parameter | Default | Description |
-|---|---|---|
-| `fallback_viewing` | `"sun"` | Viewing shown, at the coarsest resolution, for a channel group without an onset |
+### Parameters in scripts
+
+In scripts, the parameters are the arguments of `SEPPACT_parameters`; see the [library guide](library.md#parameters). The durations are `datetime.timedelta`, e.g. `timedelta(hours=2)`. An unknown parameter name or an invalid value raises an error that names the valid choices.
 
 ## Input files
 
 ### Event list
 
-A CSV file, given by its path in `file_events`, with one row per event (see `inputs/events_example.csv`):
+A CSV file, given by its path in the form (see `inputs/events_example.csv`), with one row per event:
 
 ```
 Event No,Onset Time,BG Start,BG End
@@ -142,20 +150,14 @@ The shock list, by default `inputs/shocks.dat`, is the list of interplanetary sh
 
 ## Steps of the notebook
 
-Each step is one call of the `SEPPACT` object `tool`, created in the parameters cell:
+1. **Setup:** imports the package and creates the interface, `tool = SEPPACT_notebook()`.
+2. **Parameters:** `tool.parameters_form()`; see [Parameters](#parameters).
+3. **Data:** `tool.run_data()` reads the event list and the shock list, fills in the missing windows, and downloads the data (see [Data](#data-step)). It shows the event list with its windows.
+4. **Analysis:** `tool.run_analysis()` runs the onset, spikes, peak flux and fluence steps (see [Analysis](#analysis-step)).
+5. **Events:** `tool.event_viewer()` shows the plot and the results of each event (see [Events](#events-step)).
+6. **Results:** `tool.save_results()` writes `results.csv` and, if "Save the plots of the events" is on, the plots (see [Results](#results)).
 
-1. **Setup:** imports the package.
-2. **Parameters:** `params = SEPPACT_parameters(...)` and `tool = SEPPACT(params)`; see [Parameters](#parameters).
-3. **Inputs:** `tool.run_inputs()` reads the shock list and the event list, and fills in the missing windows.
-4. **Data:** `tool.run_data()` downloads, groups and caches the HET data (see [Data](#data-step)), and resamples the flux of each group to every resolution.
-5. **Onset:** `tool.run_onsets()`; see [Onset](#onset-step).
-6. **Spikes:** `tool.run_spikes()`; see [Spikes](#spikes-step).
-7. **Peak flux:** `tool.run_peaks()`; see [Peak flux](#peak-flux-step).
-8. **Fluence:** `tool.run_fluences()`; see [Fluence](#fluence-step).
-9. **Plots:** `tool.plot_events()` writes one plot per event to `dir_plots` (see [Plots](#plots)).
-10. **Results:** `tool.save_results()` writes `results.csv` (see [Results](#results)).
-
-The results stay available as attributes of `tool`: `tool.df_series` has the results of every resolution and viewing, and `tool.df_results` the chosen ones; see the [library guide](library.md#results).
+The analysis uses the parameters of the form when the data step runs; after a change in the form, run the steps again from the data step. The results stay available as attributes of `tool`: `tool.df_series` has the results of every resolution and viewing, and `tool.df_results` the chosen ones; see the [library guide](library.md#results).
 
 <a id="data-step"></a>
 ### Data
@@ -163,6 +165,11 @@ The results stay available as attributes of `tool`: `tool.df_series` has the res
 The data of each event, viewing and sensor are downloaded from the Solar Orbiter Archive with [solo-epd-loader](https://github.com/jgieseler/solo-epd-loader) into `dir_data`, for the period from the background start to the end time, extended to `min_plot_window`. Files already in `dir_data` are not downloaded again. The channels of each group are combined, weighted by their energy widths.
 
 The result is cached in `dir_saves`, in a file named after the level, the viewings, the channel groups and the event windows. Running the notebook again with the same settings loads the cache; changing any of them creates a new cache file.
+
+<a id="analysis-step"></a>
+### Analysis
+
+The analysis step shows its progress through the onset, spikes, peak flux and fluence steps below, then how many channel groups have an onset, how many of these are copied from the reference channel, and how many are at the end of the background window.
 
 <a id="onset-step"></a>
 ### Onset
@@ -202,9 +209,14 @@ For each resolution, in the viewing of the chosen peak flux, from the chosen ons
 
 The chosen fluence is the largest of the resolutions whose interval does not start before the onset.
 
+<a id="events-step"></a>
+### Events
+
+The event viewer shows the [plot](#plots) of the event chosen in the dropdown, and its rows of [results.csv](#resultscsv). The Previous and Next buttons go through the events. The checkbox limits the list to the events with a channel group whose onset is copied from the reference channel or at the end of the background window, to check them.
+
 ## Results
 
-The results are written to `dir_outputs`.
+The results step writes `results.csv` to the results folder (`dir_outputs`), and the plots to the plots folder (`dir_plots`) if "Save the plots of the events" is on.
 
 ### results.csv
 

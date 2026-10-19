@@ -6,7 +6,8 @@ All notable changes of SEP-PACT. The format is based on [Keep a Changelog](https
 
 ### Added
 
-- Parameters cell at the top of `sep-pact.ipynb`, with all the settings: files and folders, event windows, data, onset, data quality, spikes, peak and fluence, and plots. See [Parameters](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#parameters).
+- Form at the top of `sep-pact.ipynb` (`SEPPACT_notebook`), with all the parameters in tabs: the paths of the event list and the shock list with a summary of each, the event windows, the viewings, the resolutions with their spike thresholds, an editor of the energy channel groups with the energies of the channels, and the onset, data quality, peak flux, fluence and plot parameters. Values that are not accepted are shown in the form. See [Parameters](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#parameters).
+- Event viewer in the notebook: the plot and the results of each event, with a filter for the events with copied onsets or onsets at the end of the background window. See [Events](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#events-step).
 - Channel groups per particle and sensor (`group_options`), with an optional reference channel, and a 5.99-18.83 MeV electron group.
 - Choice of the resolution and viewing of each channel group, with a data quality check after the onset (`quality_tolerance`).
 - Onsets limited to a window around the onset of the reference channel (`reference_onset_window`); channel groups without an onset take the one of the reference channel.
@@ -32,9 +33,9 @@ All notable changes of SEP-PACT. The format is based on [Keep a Changelog](https
 
 ### Upgrading from 0.1.0
 
-- Use Python 3.11 or newer, and reinstall the requirements: `pip install -r requirements.txt`, which now installs the package with its notebook dependencies (new: the `timeseries` and `visualization` extras of sunpy, solo-epd-loader 0.4.4).
+- Use Python 3.11 or newer, and reinstall the requirements: `pip install -r requirements.txt`, which now installs the package with its notebook dependencies (new: `ipywidgets`, the `timeseries` and `visualization` extras of sunpy, solo-epd-loader 0.4.4).
 - Save the event list as CSV, e.g. in Excel or with `pd.read_excel("my_events.xlsx", index_col=0).to_csv("my_events.csv", date_format="%Y-%m-%d %H:%M:%S")`; see [Event list](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#event-list).
-- Set the event list and the other settings in the parameters cell, as arguments of `SEPPACT_parameters`. The results are written to `outputs/`.
+- Set the path of the event list and the other settings in the form of the notebook. The results are written to `outputs/`.
 - The cache files of 0.1.0 in `intermediate_states/` (`protons_*.pkl`, `electrons_*.pkl`, `data_*.pkl`, `resampled_data_*.pkl`) are not used and can be deleted.
 - The results change: the onset, peak flux and fluence are now chosen per channel group from all resolutions and viewings, with the data quality check, the reference channel, the spike removal and the end at the first shock after the onset.
 
