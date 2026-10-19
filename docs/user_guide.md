@@ -107,6 +107,7 @@ The fluence is the integral of the flux over an interval around the peak: from w
 | Field | Parameter | Default | Description |
 |---|---|---|---|
 | Viewing of channel groups without an onset | `fallback_viewing` | sun | Viewing shown, at the coarsest resolution, for a channel group without an onset |
+| Height of the panel of each channel group (inches) | `panel_height` | 2.5 | From 1 to 10 inches. The plots are 15 inches wide, and as high as the panels plus 1.5 inches for the title, legend and axis labels; the note below the field gives the size of the plots with the channel groups of the form. 2 to 4 inches is recommended: below 2 the labels in a panel overlap, and above 4 the plots of several channel groups are hard to view on a screen |
 | Save the plots of the events | | on | Whether the results step also writes the plots (see [Results](#results)) |
 | Plots folder | `dir_plots` | `plots` | Folder of the plots, one per event |
 | Results folder | `dir_outputs` | `outputs` | Folder of `results.csv` |
@@ -266,7 +267,7 @@ wide = results.set_index(["Event No", "Particle", "Sensor", "Energy Label"]).uns
 
 ## Plots
 
-Each plot, `event_<number>.png`, has one panel per channel group. The title gives the group, the particle and sensor, and the viewing and resolution of the onset. Each panel shows:
+Each plot, `event_<number>.png`, has the title of the event, the legend, and one panel per channel group, `panel_height` inches high. The legend lists only the elements drawn in at least one panel, e.g. Shock Time only when a shock is in the plot. The title of a panel, in its top-right corner, gives the group, the particle and sensor, and the viewing and resolution of the onset. Each panel shows:
 
 | Element | Meaning |
 |---|---|
@@ -282,7 +283,7 @@ Each plot, `event_<number>.png`, has one panel per channel group. The title give
 | Purple dashed lines | `fluence_peak_fraction` of the peak flux, and the fluence threshold |
 | Brown area and label | Fluence interval, with the fluence, its viewing and resolution |
 | Purple dotted lines | Interplanetary shocks |
-| Text at the bottom right | Quality of the onset data: the ratio of transitions to zero or NaN values, and the numbers of zero and valid values |
+| Text in the bottom-right corner | Quality of the onset data: the ratio of transitions to zero or NaN values, and the numbers of zero and valid values |
 
 A red title marks a channel group:
 - without an onset: the panel then shows the flux in `fallback_viewing` at the coarsest resolution, with the background window and the event range;

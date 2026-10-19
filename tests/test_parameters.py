@@ -120,3 +120,16 @@ def test_dir_inputs_is_removed():
     with pytest.raises(AttributeError, match="The dir_inputs parameter was removed in 0.2.0. Give the event list and the "
                                              "shock list as paths, in file_events and file_shocks."):
         p.dir_inputs = "inputs"
+
+
+@pytest.mark.parametrize("value", [0, 0.5, 11, -2, "3", True])
+def test_panel_height_out_of_range(value):
+    p = SEPPACT_parameters()
+    with pytest.raises(ValueError, match="panel_height must be a number of inches from 1 to 10"):
+        p.panel_height = value
+
+
+@pytest.mark.parametrize("value", [1, 2.5, 10])
+def test_panel_height_in_range(value):
+    p = SEPPACT_parameters(panel_height=value)
+    assert p.panel_height == value

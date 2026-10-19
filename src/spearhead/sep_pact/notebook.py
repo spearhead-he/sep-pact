@@ -18,7 +18,7 @@ from .analysis import SEPPACT
 from .conf import SEPPACT_parameters
 from .data import load_energies
 from .inputs import read_events, read_shocks
-from .views import plot_event
+from .views import PLOT_WIDTH, plot_event, plot_height
 
 # the resolutions that can be chosen, in minutes
 RESOLUTION_CHOICES = (1, 2, 5, 10, 15, 30, 60)
@@ -80,6 +80,8 @@ class SEPPACT_notebook:
         # the channel groups of the form: [{"particle", "label", "channels", "reference"}], in the order of the plots
         self._groups = []
         self._energies = None
+        # the note on the plot height, which depends on the panel height and the number of channel groups
+        self._wgt_height_note = None
         self._style = {"description_width": "initial"}
 
     # the results of the analysis, for further work in the notebook
@@ -386,7 +388,8 @@ class SEPPACT_notebook:
             groups[label] = {"sensor": "HET", "channels": sorted(group["channels"])}
             if group["reference"]:
                 groups[label]["reference_channel"] = True
-        self._set_parameter("group_options", group_options, wgt_error)
+        if self._set_parameter("group_options", group_options, wgt_error):
+            self._update_height_note()
 
     # --- Onsets, peak and fluence tabs ---
     def _onsets_tab(self) -> widgets.VBox:
@@ -423,13 +426,38 @@ class SEPPACT_notebook:
                                     layout=widgets.Layout(width="max-content"))
         wgt_save.observe(lambda traitlet: setattr(self, "save_plots", traitlet["new"]), names="value")
         self.widgets["save_plots"] = wgt_save
+        self._wgt_height_note = widgets.HTML()
+        field_height = self._number("panel_height", "Height of the panel of each channel group (inches):", 0.5)
+        self.widgets["panel_height"].observe(lambda _: self._update_height_note(), names="value")
+        self._update_height_note()
         return widgets.VBox([
             _section("Plots", self._field(wgt_fallback, "fallback_viewing",
-                                          description="Viewing of channel groups without an onset:"), wgt_save),
+                                          description="Viewing of channel groups without an onset:"),
+                     field_height, self._wgt_height_note, wgt_save),
             _section("Outputs",
                      self._text("dir_plots", "Plots folder:", "Folder of the plots, one per event"),
                      self._text("dir_outputs", "Results folder:", "Folder of results.csv")),
         ])
+
+    def _height_note(self) -> str:
+        """What the panel height gives: the size of the plots, and whether the height is in the recommended range"""
+        p = self.parameters
+        low, high = SEPPACT_parameters.RECOMMENDED_PANEL_HEIGHTS
+        n_groups = sum(len(groups) for groups in p.group_options.values())
+        note = (f"Recommended: {low} to {high} inches. With {_count(n_groups, 'channel group')}, the plots are "
+                f"{PLOT_WIDTH} inches wide and {plot_height(p.panel_height, n_groups):g} inches high (the panels, and "
+                "the title, legend and axis labels).")
+        if p.panel_height < low:
+            warning = "Below the recommended height, the labels in a panel overlap."
+        elif p.panel_height > high:
+            warning = "Above the recommended height, the plots are hard to view on a screen."
+        else:
+            return f"<i>{html.escape(note)}</i>"
+        return f'<i>{html.escape(note)}</i><br><span style="color: darkorange"><b>Note:</b> {html.escape(warning)}</span>'
+
+    def _update_height_note(self) -> None:
+        if self._wgt_height_note is not None:
+            self._wgt_height_note.value = self._height_note()
 
     # --- Steps ---
     def _form_errors(self) -> bool:

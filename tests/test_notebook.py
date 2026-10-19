@@ -268,3 +268,24 @@ def test_fields_are_wide_enough(tmp_path, monkeypatch, shown):
     checkboxes = [w for w in all_widgets(tool.form) if isinstance(w, widgets.Checkbox) and len(w.description) > 10]
     checkboxes.append(tool.widgets["flagged_only"])
     assert len(checkboxes) >= 8 and all(w.layout.width == "max-content" for w in checkboxes)
+
+
+def test_panel_height(tmp_path, monkeypatch):
+    tool = make_tool(tmp_path, monkeypatch)
+    note = tool._wgt_height_note
+    # 5 channel groups of 2.5 inches, and 1.5 inches for the title, legend and axis labels
+    assert "Recommended: 2 to 4 inches. With 5 channel groups, the plots are 15 inches wide and 14 inches high" in note.value
+    assert "darkorange" not in note.value
+    tool.widgets["panel_height"].value = 1.5
+    assert tool.parameters.panel_height == 1.5
+    assert "9 inches high" in note.value and "Below the recommended height, the labels in a panel overlap" in note.value
+    tool.widgets["panel_height"].value = 5
+    assert "Above the recommended height" in note.value and tool.errors == {}
+    tool.widgets["panel_height"].value = 0.5
+    assert tool.parameters.panel_height == 5
+    assert tool.errors == {"panel_height": "panel_height must be a number of inches from 1 to 10, not 0.5."}
+    # the note follows the number of channel groups
+    tool.widgets["panel_height"].value = 3
+    remove = tool.widgets["group_options"].children[4].children[1].children[2]
+    remove.click()
+    assert "With 4 channel groups, the plots are 15 inches wide and 13.5 inches high" in note.value

@@ -107,6 +107,7 @@ class SEPPACT_parameters:
 
     # Plots
     fallback_viewing: str = "sun"              # viewing shown, at the coarsest resolution, for channels without an onset
+    panel_height: float = 2.5                  # height of the panel of each channel group, in inches (1 to 10)
 
     def __setattr__(self, name: str, value) -> None:
         # catches removed parameters and typos, which would otherwise be silently ignored
@@ -134,6 +135,7 @@ class SEPPACT_parameters:
         "resample_freqs": "_check_resample_freqs",
         "fluence_peak_fraction": "_check_fraction",
         "group_options": "_check_group_options",
+        "panel_height": "_check_panel_height",
     }
 
     @staticmethod
@@ -145,6 +147,16 @@ class SEPPACT_parameters:
     def _check_count(name: str, value) -> None:
         if not isinstance(value, int) or value < 1:
             raise ValueError(f"{name} must be an integer of at least 1, not {value!r}.")
+
+    # the panel heights (inches) that are accepted, and those that are recommended: below 2 the labels in a panel
+    # overlap, and above 4 the plots of several channel groups are hard to view on a screen
+    PANEL_HEIGHTS: ClassVar[tuple] = (1, 10)
+    RECOMMENDED_PANEL_HEIGHTS: ClassVar[tuple] = (2, 4)
+
+    def _check_panel_height(self, name: str, value) -> None:
+        low, high = self.PANEL_HEIGHTS
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not low <= value <= high:
+            raise ValueError(f"{name} must be a number of inches from {low} to {high}, not {value!r}.")
 
     @staticmethod
     def _check_fraction(name: str, value) -> None:

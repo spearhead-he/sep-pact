@@ -23,7 +23,7 @@ All notable changes of SEP-PACT. The format is based on [Keep a Changelog](https
 - The event list may have an `End Time` column; `BG Start`, `BG End` and `End Time` are optional, with defaults set in the parameters.
 - The analysis of a channel group ends at the first shock after its onset, instead of the event end being moved to the first shock after the background.
 - The flux is downloaded per event, viewing and sensor, combined into channel groups before resampling, and cached in `intermediate_states/` in a file named after the settings. The previous cache files are not used.
-- The plots show the flux at the resolution and viewing of the onset, and of the peak flux and the fluence when they differ, the event range, and notes on copied onsets and onsets at the end of the background window.
+- The plots show the flux at the resolution and viewing of the onset, and of the peak flux and the fluence when they differ, the event range, and notes on copied onsets and onsets at the end of the background window. The legend is between the title and the first panel and lists only the elements drawn in the plot, and plots with few channel groups have room for their title, legend and axis labels. The height of the panels can be set (`panel_height`).
 - Python 3.11 or newer is required.
 
 ### Fixed
