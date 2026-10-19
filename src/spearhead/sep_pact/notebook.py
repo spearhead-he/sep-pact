@@ -10,7 +10,7 @@ from datetime import timedelta
 from io import BytesIO
 
 import pandas as pd
-from IPython.display import Image, clear_output, display
+from IPython.display import display
 from ipywidgets import widgets
 from matplotlib import pyplot as plt
 
@@ -32,12 +32,12 @@ NUMBER_WIDTH = "100px"
 TEXT_WIDTH = "420px"
 
 
-def _show_figure(fig) -> None:
-    """Displays a figure of views.py in the notebook, as a .png image, and closes it"""
+def _figure_png(fig) -> bytes:
+    """Returns a figure of views.py as a .png image, and closes it"""
     buffer = BytesIO()
     fig.savefig(buffer, format="png", bbox_inches="tight")
     plt.close(fig)
-    display(Image(buffer.getvalue()))
+    return buffer.getvalue()
 
 
 def _is_connection_error(error) -> bool:
@@ -516,13 +516,19 @@ class SEPPACT_notebook:
         return list(flagged[flagged].index)
 
     def event_viewer(self) -> None:
-        """The plot and the results of the event chosen in the dropdown"""
+        """The plot and the results of the event chosen in the dropdown
+
+        The plot is an Image widget and the results an HTML widget, which are updated when the event changes. Outputs
+        in an Output widget would be slow to run headless (e.g. nbmake): the runner sends them back to the kernel at
+        every output, and stalls when they are large.
+        """
         if self.seppact is None or self.seppact.df_results is None or "Fluence" not in self.seppact.df_results:
             display(widgets.HTML(_error_text("There are no results: run the analysis step first.")))
             return
         table = self.seppact.results_table()
         flagged = self._flagged_events()
-        out = widgets.Output()
+        wgt_plot = widgets.Image(format="png", layout=widgets.Layout(max_width="100%", height="auto"))
+        wgt_table = widgets.HTML()
         wgt_flagged = widgets.Checkbox(value=False, indent=False, layout=widgets.Layout(width="max-content"),
                                        description=f"Only the {_count(len(flagged), 'event')} with copied onsets or "
                                                    "onsets at the end of the background window")
@@ -543,21 +549,20 @@ class SEPPACT_notebook:
                 wgt_event.value = values[min(max(i, 0), len(values) - 1)]
 
         def show(_=None):
-            with out:
-                clear_output(wait=True)
-                if wgt_event.value is None:
-                    return
-                _show_figure(plot_event(self.seppact, wgt_event.value))
-                display(table[table["Event No"] == wgt_event.value].set_index("Event No"))
+            if wgt_event.value is None:
+                wgt_plot.value, wgt_table.value = b"", ""
+                return
+            wgt_plot.value = _figure_png(plot_event(self.seppact, wgt_event.value))
+            wgt_table.value = table[table["Event No"] == wgt_event.value].to_html(index=False, na_rep="", border=0)
 
         self.widgets.update({"flagged_only": wgt_flagged, "event": wgt_event, "previous": btn_previous, "next": btn_next,
-                             "viewer": out})
+                             "plot": wgt_plot, "table": wgt_table})
         set_options()
         wgt_flagged.observe(set_options, names="value")
         wgt_event.observe(show, names="value")
         btn_previous.on_click(lambda _: move(-1))
         btn_next.on_click(lambda _: move(1))
-        display(widgets.VBox([wgt_flagged, widgets.HBox([wgt_event, btn_previous, btn_next]), out]))
+        display(widgets.VBox([wgt_flagged, widgets.HBox([wgt_event, btn_previous, btn_next]), wgt_plot, wgt_table]))
         show()
 
     def save_results(self) -> None:

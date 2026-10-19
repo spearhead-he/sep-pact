@@ -1,5 +1,6 @@
 """Notebook interface: the widgets of the parameters form, the channel group editor and the steps of the analysis"""
 import os
+import re
 from datetime import timedelta
 
 import pytest
@@ -202,6 +203,15 @@ def test_steps_of_the_analysis(tmp_path, monkeypatch, shown):
     assert "5 of 5 channel groups (1 event) have an onset: 0 copied" in shown_text(shown)
 
 
+def shown_event(tool) -> int:
+    """Returns the event of the results shown in the viewer, after checking that its plot is shown"""
+    assert bytes(tool.widgets["plot"].value).startswith(b"\x89PNG")
+    # the first cell of each row is the event number
+    events = re.findall(r"<tr>\s*<td>(\d+)</td>", tool.widgets["table"].value)
+    assert len(events) == 5 and len(set(events)) == 1
+    return int(events[0])
+
+
 def test_event_viewer(tmp_path, monkeypatch, shown):
     events = {1: {"Onset Time": T0}, 2: {"Onset Time": T0, "BG End": T0 - timedelta(minutes=2)}}
     rises = {(particle, viewing): T0 for particle in ("electrons", "protons") for viewing in VIEWINGS}
@@ -210,10 +220,9 @@ def test_event_viewer(tmp_path, monkeypatch, shown):
     tool.run_analysis()
     tool.event_viewer()
     # the first event is shown without a click: its plot and its results
-    assert tool.widgets["event"].value == 1
-    assert [type(o).__name__ for o in shown[-2:]] == ["Image", "DataFrame"] and shown[-1].index.tolist() == [1] * 5
+    assert tool.widgets["event"].value == 1 and shown_event(tool) == 1
     tool.widgets["next"].click()
-    assert tool.widgets["event"].value == 2 and shown[-1].index.tolist() == [2] * 5
+    assert tool.widgets["event"].value == 2 and shown_event(tool) == 2
     tool.widgets["next"].click()
     assert tool.widgets["event"].value == 2
     tool.widgets["previous"].click()
@@ -244,6 +253,7 @@ def test_event_viewer_without_flagged_events(tmp_path, monkeypatch, shown):
     assert tool._flagged_events() == []
     tool.widgets["flagged_only"].value = True
     assert tool.widgets["event"].options == () and tool.widgets["event"].value is None
+    assert bytes(tool.widgets["plot"].value) == b"" and tool.widgets["table"].value == ""
 
 
 def all_widgets(widget):
