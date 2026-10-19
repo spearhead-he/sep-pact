@@ -45,7 +45,9 @@ def default_spike_thresholds() -> dict:
 
 
 # Removed parameters: {name: (version, what to use instead)}
-REMOVED_PARAMETERS = {}
+REMOVED_PARAMETERS = {
+    "dir_inputs": ("0.2.0", "Give the event list and the shock list as paths, in file_events and file_shocks."),
+}
 
 
 @dataclass
@@ -61,14 +63,13 @@ class SEPPACT_parameters:
     SENSORS: ClassVar[tuple] = ("HET",)
 
     # Files and folders
-    dir_inputs: str = "inputs"                 # event list and shock list
+    # event list: Event No, Onset Time and optionally BG Start, BG End, End Time
+    file_events: str = "inputs/events_example.csv"
+    file_shocks: str = "inputs/shocks.dat"     # interplanetary shock list from ipshocks.helsinki.fi
     dir_data: str = "data"                     # downloaded EPD files
     dir_saves: str = "intermediate_states"     # cached flux DataFrames
     dir_plots: str = "plots"                   # one figure per event
     dir_outputs: str = "outputs"               # result tables
-    # event list in dir_inputs: Event No, Onset Time and optionally BG Start, BG End, End Time
-    file_events: str = "events_example.csv"
-    file_shocks: str = "shocks.dat"            # interplanetary shock list from ipshocks.helsinki.fi, in dir_inputs
 
     # Event windows, used where the event list leaves them empty
     bg_start_before_onset: timedelta = timedelta(hours=2)

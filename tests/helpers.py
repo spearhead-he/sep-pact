@@ -6,6 +6,7 @@ back to the background. With a constant background, the threshold equals the bac
 step before the rise time, when the rise time is on a bin boundary.
 """
 import functools
+import os
 from datetime import datetime, timedelta
 
 import matplotlib
@@ -54,8 +55,9 @@ def make_params(tmp_path, **parameters) -> SEPPACT_parameters:
     """Returns parameters with all the folders in tmp_path (the inputs folder is created)"""
     folders = {name: str(tmp_path / name) for name in ("inputs", "data", "intermediate_states", "plots", "outputs")}
     (tmp_path / "inputs").mkdir(exist_ok=True)
-    defaults = {"dir_inputs": folders["inputs"], "dir_data": folders["data"], "dir_saves": folders["intermediate_states"],
-                "dir_plots": folders["plots"], "dir_outputs": folders["outputs"], "file_events": "events.csv"}
+    defaults = {"file_events": os.path.join(folders["inputs"], "events.csv"),
+                "file_shocks": os.path.join(folders["inputs"], "shocks.dat"), "dir_data": folders["data"],
+                "dir_saves": folders["intermediate_states"], "dir_plots": folders["plots"], "dir_outputs": folders["outputs"]}
     defaults.update(parameters)
     return SEPPACT_parameters(**defaults)
 

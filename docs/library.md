@@ -25,7 +25,7 @@ pip install -e .
 ```python
 from spearhead.sep_pact import SEPPACT, SEPPACT_parameters
 
-params = SEPPACT_parameters(file_events="events_example.csv")
+params = SEPPACT_parameters(file_events="inputs/events_example.csv")
 tool = SEPPACT(params)
 tool.run_inputs()
 tool.run_data()

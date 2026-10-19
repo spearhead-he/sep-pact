@@ -37,13 +37,12 @@ All the parameters are in the parameters cell at the top of the notebook, as the
 
 | Parameter | Default | Description |
 |---|---|---|
-| `dir_inputs` | `"inputs"` | Folder of the event list and the shock list |
 | `dir_data` | `"data"` | Folder of the downloaded EPD files |
 | `dir_saves` | `"intermediate_states"` | Folder of the cached flux |
 | `dir_plots` | `"plots"` | Folder of the plots, one per event |
 | `dir_outputs` | `"outputs"` | Folder of the result tables |
-| `file_events` | `"events_example.csv"` | [Event list](#event-list), in `dir_inputs` |
-| `file_shocks` | `"shocks.dat"` | [Shock list](#shock-list), in `dir_inputs` |
+| `file_events` | `"inputs/events_example.csv"` | Path of the [event list](#event-list) |
+| `file_shocks` | `"inputs/shocks.dat"` | Path of the [shock list](#shock-list) |
 
 ### Event windows
 
@@ -112,7 +111,7 @@ The default groups are:
 
 ### Event list
 
-A CSV file in `dir_inputs`, with one row per event (see `inputs/events_example.csv`):
+A CSV file, given by its path in `file_events`, with one row per event (see `inputs/events_example.csv`):
 
 ```
 Event No,Onset Time,BG Start,BG End
@@ -139,7 +138,7 @@ pd.read_excel("my_events.xlsx", index_col=0).to_csv("my_events.csv", date_format
 
 ### Shock list
 
-`inputs/shocks.dat` is the list of interplanetary shocks of the [ipshocks database](https://ipshocks.helsinki.fi/): lines starting with `#` are comments, and the first six columns (separated by `;`) are the year, month, day, hour, minute and second of the shock. The analysis of a channel group ends at the first shock after its onset, if that is before `End Time`.
+The shock list, by default `inputs/shocks.dat`, is the list of interplanetary shocks of the [ipshocks database](https://ipshocks.helsinki.fi/): lines starting with `#` are comments, and the first six columns (separated by `;`) are the year, month, day, hour, minute and second of the shock. The analysis of a channel group ends at the first shock after its onset, if that is before `End Time`.
 
 ## Steps of the notebook
 

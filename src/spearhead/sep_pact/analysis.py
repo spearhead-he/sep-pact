@@ -401,8 +401,8 @@ class SEPPACT:
     def run_inputs(self) -> None:
         """Reads the shock list and the event list"""
         p = self.params
-        self.shocktimes = read_shocks(pjoin(p.dir_inputs, p.file_shocks))
-        self.events = read_events(pjoin(p.dir_inputs, p.file_events), p)
+        self.shocktimes = read_shocks(p.file_shocks)
+        self.events = read_events(p.file_events, p)
 
     def run_data(self, redownload: bool = False) -> None:
         """Loads the flux of the channel groups (from the cache, or downloads it), and resamples it"""

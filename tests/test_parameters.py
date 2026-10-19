@@ -9,7 +9,8 @@ from spearhead.sep_pact.conf import default_group_options
 
 def test_defaults():
     p = SEPPACT_parameters()
-    assert p.file_events == "events_example.csv"
+    assert p.file_events == "inputs/events_example.csv"
+    assert p.file_shocks == "inputs/shocks.dat"
     assert p.viewings == ["sun", "asun", "north", "south"]
     assert p.resample_freqs == [timedelta(minutes=2), timedelta(minutes=5), timedelta(minutes=10), timedelta(minutes=30)]
     assert p.group_options == default_group_options()
@@ -112,3 +113,10 @@ def test_removed_parameter_fails_with_its_replacement(monkeypatch):
     p = SEPPACT_parameters()
     with pytest.raises(AttributeError, match="The old_name parameter was removed in 0.2.0. Use new_name instead."):
         p.old_name = 1
+
+
+def test_dir_inputs_is_removed():
+    p = SEPPACT_parameters()
+    with pytest.raises(AttributeError, match="The dir_inputs parameter was removed in 0.2.0. Give the event list and the "
+                                             "shock list as paths, in file_events and file_shocks."):
+        p.dir_inputs = "inputs"
