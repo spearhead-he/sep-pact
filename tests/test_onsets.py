@@ -208,3 +208,13 @@ def test_series_without_an_onset_are_not_usable(tmp_path, monkeypatch):
     assert not tool.df_series["Onset Copied"].any()
     assert tool.df_series["Quality Length"].isna().all()
     assert tool.df_results["Onset Time"].isna().all() and tool.df_results["Onset Viewing"].isna().all()
+
+
+def test_nothing_is_copied_without_a_reference_channel(tmp_path, monkeypatch):
+    groups = {"electrons": {"1 MeV": {"sensor": "HET", "channels": [0, 1]}},
+              "protons": {"8 MeV": {"sensor": "HET", "channels": [1, 2, 3]}}}
+    rises = {("electrons", viewing): T0 for viewing in VIEWINGS}  # flat protons
+    tool = synthetic_tool(tmp_path, monkeypatch, rises, group_options=groups)
+    tool.run_onsets()
+    assert not tool.df_series["Onset Copied"].any()
+    assert pd.isna(onset(tool, "protons", "8 MeV")) and not pd.isna(onset(tool, "electrons", "1 MeV"))

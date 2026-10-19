@@ -45,7 +45,9 @@ def default_spike_thresholds() -> dict:
 
 
 # Removed parameters: {name: (version, what to use instead)}
-REMOVED_PARAMETERS = {}
+REMOVED_PARAMETERS = {
+    "dir_inputs": ("0.2.0", "Give the event list and the shock list as paths, in file_events and file_shocks."),
+}
 
 
 @dataclass
@@ -61,14 +63,13 @@ class SEPPACT_parameters:
     SENSORS: ClassVar[tuple] = ("HET",)
 
     # Files and folders
-    dir_inputs: str = "inputs"                 # event list and shock list
+    # event list: Event No, Onset Time and optionally BG Start, BG End, End Time
+    file_events: str = "inputs/events_example.csv"
+    file_shocks: str = "inputs/shocks.dat"     # interplanetary shock list from ipshocks.helsinki.fi
     dir_data: str = "data"                     # downloaded EPD files
     dir_saves: str = "intermediate_states"     # cached flux DataFrames
     dir_plots: str = "plots"                   # one figure per event
     dir_outputs: str = "outputs"               # result tables
-    # event list in dir_inputs: Event No, Onset Time and optionally BG Start, BG End, End Time
-    file_events: str = "events_example.csv"
-    file_shocks: str = "shocks.dat"            # interplanetary shock list from ipshocks.helsinki.fi, in dir_inputs
 
     # Event windows, used where the event list leaves them empty
     bg_start_before_onset: timedelta = timedelta(hours=2)
@@ -106,6 +107,7 @@ class SEPPACT_parameters:
 
     # Plots
     fallback_viewing: str = "sun"              # viewing shown, at the coarsest resolution, for channels without an onset
+    panel_height: float = 2.5                  # height of the panel of each channel group, in inches (1 to 10)
 
     def __setattr__(self, name: str, value) -> None:
         # catches removed parameters and typos, which would otherwise be silently ignored
@@ -133,6 +135,7 @@ class SEPPACT_parameters:
         "resample_freqs": "_check_resample_freqs",
         "fluence_peak_fraction": "_check_fraction",
         "group_options": "_check_group_options",
+        "panel_height": "_check_panel_height",
     }
 
     @staticmethod
@@ -144,6 +147,16 @@ class SEPPACT_parameters:
     def _check_count(name: str, value) -> None:
         if not isinstance(value, int) or value < 1:
             raise ValueError(f"{name} must be an integer of at least 1, not {value!r}.")
+
+    # the panel heights (inches) that are accepted, and those that are recommended: below 2 the labels in a panel
+    # overlap, and above 4 the plots of several channel groups are hard to view on a screen
+    PANEL_HEIGHTS: ClassVar[tuple] = (1, 10)
+    RECOMMENDED_PANEL_HEIGHTS: ClassVar[tuple] = (2, 4)
+
+    def _check_panel_height(self, name: str, value) -> None:
+        low, high = self.PANEL_HEIGHTS
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not low <= value <= high:
+            raise ValueError(f"{name} must be a number of inches from {low} to {high}, not {value!r}.")
 
     @staticmethod
     def _check_fraction(name: str, value) -> None:

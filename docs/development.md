@@ -26,7 +26,8 @@ The tests are in `tests/`, one file per part of the tool:
 | `test_spikes.py` | Spike detection with the threshold of each resolution, and spike removal |
 | `test_peaks_fluence.py` | Peak flux and fluence: the functions, the choice of the viewing and resolution, shocks |
 | `test_results.py` | A whole synthetic run: the result tables and the files of `save_results()` and `plot_events()` |
-| `test_views.py` | The plots: file names, saving, and the plot of an event compared with baseline images |
+| `test_views.py` | The plots: file names, saving, and the plot of an event compared with baseline images, with 1 to 6 channel groups and small, medium and large panels (the title, legend and panels, and the texts in the corners of the panels), and the entries of the legend |
+| `test_notebook.py` | The notebook interface without a browser: the fields of the form and their errors, the viewings and resolutions, the summaries of the input files, the channel group editor, and the steps with the event viewer |
 | `test_end_to_end.py` | The example event list, from the download of the data to the results and the plot (network) |
 
 All the tests except the end-to-end test run offline, with synthetic data built so that the expected results are known (`tests/helpers.py`): a constant background with a linear rise and decay, and a fake `epd_load` that returns data shaped like the real one. The end-to-end test downloads data and is marked `network`; it runs after the offline tests.

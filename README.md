@@ -22,9 +22,9 @@ SEP-PACT (Solar Energetic Particle Analysis and Calculation Tool) analyses Solar
 
 Each quantity is calculated at several time resolutions and in the four viewing directions of HET (sun, asun, north, south), and the tool chooses one result per channel group: the onset of the finest resolution with reliable data (the earliest of its viewings), the highest peak flux of the viewings at that resolution, and the largest fluence of the resolutions in the viewing of the peak.
 
-- **Inputs:** an event list (Excel file with the event onsets and, optionally, the background windows and end times) and the list of interplanetary shocks from the [ipshocks database](https://ipshocks.helsinki.fi/), provided in `inputs/shocks.dat`.
+- **Inputs:** an event list (CSV file with the event onsets and, optionally, the background windows and end times) and the list of interplanetary shocks from the [ipshocks database](https://ipshocks.helsinki.fi/), provided in `inputs/shocks.dat`.
 - **Outputs:** one plot per event in `plots/`, and the results in `outputs/results.csv`: the chosen onset, peak flux and fluence of each event and channel group.
-- **Notebook:** `sep-pact.ipynb`, the whole analysis, from the parameters to the plots and tables, one cell per step.
+- **Notebook:** `sep-pact.ipynb`, the whole analysis: a form with all the parameters, then one cell per step, with an event viewer to check the plot and results of each event.
 - **Package:** `spearhead.sep_pact`, the code of the analysis, also usable in scripts without the notebook.
 
 Tested in Linux with Python 3.11, 3.12, 3.13 and 3.14.
@@ -45,9 +45,20 @@ You can access SEP-PACT online on the JupyterHub server of the SPEARHEAD project
 
 ## How to use
 
-1. Set the parameters in the parameters cell at the top of `sep-pact.ipynb`: the event list (`file_events`, a CSV file in `inputs/`, by default `events_example.csv`), the event windows, the energy channel groups, the viewings, the resolutions and the parameters of the onset, spike, peak flux and fluence calculations.
-2. Run all the cells, in order.
-3. Find the plots in `plots/` and the results in `outputs/`.
+Open `sep-pact.ipynb` and run its cells in order:
+
+```python
+tool = SEPPACT_notebook()
+tool.parameters_form()   # all the parameters, in tabs
+tool.run_data()          # reads the event list and downloads the data
+tool.run_analysis()      # onsets, spikes, peak flux and fluence
+tool.event_viewer()      # the plot and results of each event
+tool.save_results()      # results.csv and the plots
+```
+
+1. In the form, set the path of the event list (by default `inputs/events_example.csv`), the event windows, the viewings, the resolutions, the energy channel groups and the parameters of the onset, peak flux and fluence calculations.
+2. Run the steps, and check the events in the event viewer.
+3. Find the results in `outputs/results.csv` and the plots in `plots/`.
 
 The data are downloaded into `data/` the first time. The flux of the channel groups is cached in `intermediate_states/`, and loaded from there when the notebook is run again with the same events and data settings.
 

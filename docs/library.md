@@ -6,6 +6,7 @@
 - [The analysis](#the-analysis)
 - [Results](#results)
 - [Plots](#plots)
+- [Notebook interface](#notebook-interface)
 - [Modules](#modules)
 
 The notebook `sep-pact.ipynb` uses the package `spearhead.sep_pact`, which can also be used in scripts. This guide describes its main classes and functions; the [user guide](user_guide.md) describes the parameters, the steps and the results.
@@ -25,7 +26,7 @@ pip install -e .
 ```python
 from spearhead.sep_pact import SEPPACT, SEPPACT_parameters
 
-params = SEPPACT_parameters(file_events="events_example.csv")
+params = SEPPACT_parameters(file_events="inputs/events_example.csv")
 tool = SEPPACT(params)
 tool.run_inputs()
 tool.run_data()
@@ -124,6 +125,25 @@ fig = plot_event(tool, 20)
 fig.savefig("event_20.pdf")
 ```
 
+## Notebook interface
+
+`SEPPACT_notebook` (`spearhead.sep_pact.notebook`, with the `notebook` extra) is the interface of `sep-pact.ipynb`. It can be created with parameters, e.g. to start the form from other defaults, and its results are the same attributes as those of `SEPPACT`:
+
+```python
+from spearhead.sep_pact import SEPPACT_parameters
+from spearhead.sep_pact.notebook import SEPPACT_notebook
+
+tool = SEPPACT_notebook(SEPPACT_parameters(file_events="my_events.csv"))
+tool.parameters_form()
+tool.run_data()
+tool.run_analysis()
+tool.df_results           # the same as tool.seppact.df_results
+```
+
+- `tool.parameters` is the `SEPPACT_parameters` of the form, and `tool.errors` the values of the form that are not accepted.
+- `run_data()` creates `tool.seppact`, a `SEPPACT` with a copy of the parameters, so that a later change in the form does not change an analysis that has run.
+- `tool.widgets` holds the widgets of the form by parameter name, and those of the event viewer.
+
 ## Modules
 
 | Module | Content |
@@ -133,3 +153,4 @@ fig.savefig("event_20.pdf")
 | `data` | `load()`, which returns the EPD data of each particle as `ParticleData` (the flux with the channel numbers as columns, and the energies of the channels), `load_energies()`, `group_channels_de()`, `flux_cache_file()`, `download_data()` and `resample_flux()`: the EPD data, the flux of the channel groups and its cache |
 | `analysis` | `SEPPACT`, and the functions of the steps: `onset_detection_sigma()` (which returns the onset, the background start and end, and the background level and threshold), `quality_analysis()`, `choose_onset()`, `choose_peak()`, `choose_fluence()`, `detect_spikes()`, `remove_spikes()`, `get_peak_flux()`, `fluence_interval()`, `peak_search_end()` and `shocks_in_range()` |
 | `views` | `plot_event()` and `event_plot_filename()` |
+| `notebook` | `SEPPACT_notebook`, the interface of the notebook (needs the `notebook` extra) |

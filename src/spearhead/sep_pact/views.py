@@ -2,7 +2,6 @@
 from datetime import timedelta
 from types import SimpleNamespace
 
-import numpy as np
 import pandas as pd
 from matplotlib import dates as mdates
 from matplotlib import pyplot as plt
@@ -13,12 +12,42 @@ from matplotlib.patches import Patch
 from .analysis import reference_iter, shocks_in_range
 
 
+# width of the plots, and height of the title, legend and axis labels together (inches); the height of each panel is
+# the panel_height parameter
+PLOT_WIDTH = 15
+MARGIN_HEIGHT = 1.5
+
+
+# distance (points) of the panel title and the data quality text from the corners of the panel
+CORNER_PADDING = 5
+
+
+def _corner_text(ax, text: str, top: bool, **kwargs):
+    """Writes the text inside the panel, in its top-right or bottom-right corner, whatever the size of the panel"""
+    return ax.annotate(text, xy=(1, 1 if top else 0), xycoords="axes fraction",
+                       xytext=(-CORNER_PADDING, -CORNER_PADDING if top else CORNER_PADDING), textcoords="offset points",
+                       horizontalalignment="right", verticalalignment="top" if top else "bottom", **kwargs)
+
+
+def _panel_title(ax, text: str, color: str) -> None:
+    """Writes the title of a panel in its top-right corner"""
+    # in the size of axes titles
+    _corner_text(ax, text, top=True, color=color, fontweight="bold", fontsize=plt.rcParams["axes.titlesize"],
+                 gid="panel_title")
+
+
+def plot_height(panel_height: float, n_panels: int) -> float:
+    """Returns the height of the plot of an event (inches), with n_panels channel groups"""
+    return panel_height * n_panels + MARGIN_HEIGHT
+
+
 def event_plot_filename(tool, event_no: int) -> str:
     """Returns the default file name of the plot of an event, e.g. event_007.png"""
     return f"event_{event_no:03}.png"
 
 
-def _plot_no_onset(ax, tool, event_no: int, particle: str, sensor: str, mevlbl: str, ax_title_params: dict) -> None:
+def _plot_no_onset(ax, tool, event_no: int, particle: str, sensor: str, mevlbl: str, ax_title_params: dict,
+                   drawn: set) -> None:
     """Plots a channel group without an onset: the flux in fallback_viewing at the coarsest resolution, with a red title"""
     p = tool.params
     bg_start = tool.events.loc[event_no, "BG Start"]
@@ -28,22 +57,19 @@ def _plot_no_onset(ax, tool, event_no: int, particle: str, sensor: str, mevlbl: 
     ts_length, n_zeroes, ratio = chosen["Quality Length"], chosen["Quality Zeroes"], chosen["Quality Ratio"]
     ax_title_params["color"] = "red"
     resolution = int(p.resample_freqs[-1].total_seconds()/60)
-    ax.set_title(f"{mevlbl} {particle}/{sensor} ({p.fallback_viewing} viewing, {resolution} mins resolution)",
-                 **ax_title_params)
+    _panel_title(ax, f"{mevlbl} {particle}/{sensor} ({p.fallback_viewing} viewing, {resolution} mins resolution)",
+                 ax_title_params["color"])
     flux = tool.dfs_flux[particle][sensor][p.resample_freqs[-1]].loc[event_no, (p.fallback_viewing, mevlbl)]
     ax.plot(flux.index, flux.values, label="flux", color="orange", alpha=0.3)
     bot_lim, top_lim = ax.get_ylim()
     ax.fill_between([bg_start, bg_end], bot_lim, top_lim, color="green", alpha=0.3, label="background sample")
     ax.fill_between([bg_end, calc_end], bot_lim, top_lim, color="black", alpha=0.1, label="Event range")
+    drawn.update({"data", "bg_sample", "event_range"})
     ratio_txt = f"ratio={f'{ratio:.2f}' if not pd.isna(ratio) else 'N/A'}"
     n_zeroes_txt = f"#zeroes={n_zeroes if not pd.isna(n_zeroes) else 'N/A'}"
     n_non_zeroes_txt = f"#non-zeroes={ts_length-n_zeroes if not pd.isna(ts_length) and not pd.isna(n_zeroes) else 'N/A'}"
     qties_txt = f"{ratio_txt}, {n_zeroes_txt}, {n_non_zeroes_txt}"
-    ax.text(flux.index[-1],
-            bot_lim * (1 + (np.log10(top_lim) - np.log10(bot_lim)) / 8),
-            qties_txt,
-            horizontalalignment="right",
-            verticalalignment="bottom")
+    _corner_text(ax, qties_txt, top=False)
     ax.set_ylim([bot_lim, top_lim])
 
 
@@ -101,7 +127,7 @@ def _axis_limits(v: SimpleNamespace) -> tuple[float, float]:
     return bot_lim, top_lim
 
 
-def _draw_data(ax, v: SimpleNamespace, bot_lim: float, top_lim: float, params) -> None:
+def _draw_data(ax, v: SimpleNamespace, bot_lim: float, top_lim: float, params, drawn: set) -> None:
     """Draws the event range, the flux, the background, the onset, the peak flux, the thresholds, the fluence and
     the shocks"""
     ax.fill_between([v.onset_time, v.calc_end], bot_lim, top_lim, color="black", alpha=0.1, label="Event range")
@@ -113,7 +139,9 @@ def _draw_data(ax, v: SimpleNamespace, bot_lim: float, top_lim: float, params) -
     ax.fill_between([v.bg_start, v.bg_end], bot_lim, top_lim, color="green", alpha=0.3, label="background sample")
     ax.axhline(y=v.bg_level, color="blue", linestyle="--", label="background level")
     ax.axvline(x=v.onset_time, color="green", linestyle="--", label=f"onset time ({v.onset_time.strftime('%Y-%m-%d %H:%M')})")
+    drawn.update({"event_range", "data", "bg_sample", "bg_level", "onset", "threshold"})
     if not pd.isna(v.peak_time):
+        drawn.update({"peak_flux", "peak_fraction"})
         ax.scatter(v.peak_time, v.peak_flux, color="red", zorder=5,
                    label=f"peak flux ({v.peak_flux:.2E}/{v.peak_time.strftime('%Y-%m-%d %H:%M')})")
         ax.axhline(y=v.peak_flux * params.fluence_peak_fraction, color="purple", linestyle="--",
@@ -124,8 +152,10 @@ def _draw_data(ax, v: SimpleNamespace, bot_lim: float, top_lim: float, params) -
     if not pd.isna(v.fluence_start) and not pd.isna(v.fluence_end):
         ax.fill_between([v.fluence_start, v.fluence_end], bot_lim, top_lim, color="brown", alpha=0.2,
                         label=f"fluence ({v.fluence:.2E})")
+        drawn.add("fluence")
     for shocktime in v.shocktimes:
         ax.axvline(x=shocktime, color="purple", linestyle=":", label=f"shock time ({shocktime.strftime('%Y-%m-%d %H:%M')})")
+        drawn.add("shock")
 
 
 def _draw_labels(ax, v: SimpleNamespace, bot_lim: float, top_lim: float, reference_channel: dict | None) -> None:
@@ -151,11 +181,7 @@ def _draw_labels(ax, v: SimpleNamespace, bot_lim: float, top_lim: float, referen
                 f"{v.fluence:.2E}/{v.viewing_flu}/{int(v.resample_flu.total_seconds()/60)} mins",
                 color="brown",
                 horizontalalignment="center")
-    ax.text(v.flux.index[-1],
-            bot_lim * (1 + (np.log10(top_lim) - np.log10(bot_lim)) / 8),
-            f"ratio={v.ratio:.2f}, #zeroes={v.n_zeroes}, #non-zeroes={v.ts_length-v.n_zeroes}",
-            horizontalalignment="right",
-            verticalalignment="bottom")
+    _corner_text(ax, f"ratio={v.ratio:.2f}, #zeroes={v.n_zeroes}, #non-zeroes={v.ts_length-v.n_zeroes}", top=False)
     for shocktime in v.shocktimes:
         ax.text(shocktime + timedelta(minutes=15),
                 bot_lim * 10,
@@ -163,15 +189,16 @@ def _draw_labels(ax, v: SimpleNamespace, bot_lim: float, top_lim: float, referen
                 color="purple")
 
 
-def _plot_channel(ax, tool, event_no: int, particle: str, sensor: str, mevlbl: str, ax_title_params: dict) -> None:
+def _plot_channel(ax, tool, event_no: int, particle: str, sensor: str, mevlbl: str, ax_title_params: dict,
+                  drawn: set) -> None:
     """Plots a channel group with an onset: the flux, background, onset, peak flux, fluence and shocks"""
     v = _channel_values(tool, event_no, particle, sensor, mevlbl)
     if v.onset_at_bg_end:
         ax_title_params["color"] = "red"
-    ax.set_title(f"{mevlbl} {particle}/{sensor} ({v.viewing_ot} viewing, {int(v.resample_ot.total_seconds()/60)} mins "
-                 "resolution)", **ax_title_params)
+    _panel_title(ax, f"{mevlbl} {particle}/{sensor} ({v.viewing_ot} viewing, {int(v.resample_ot.total_seconds()/60)} "
+                 "mins resolution)", ax_title_params["color"])
     bot_lim, top_lim = _axis_limits(v)
-    _draw_data(ax, v, bot_lim, top_lim, tool.params)
+    _draw_data(ax, v, bot_lim, top_lim, tool.params, drawn)
     _draw_labels(ax, v, bot_lim, top_lim, tool.reference_channel)
     ax.set_ylim([bot_lim, top_lim])
     ax.set_xlim([v.flux.index[0], v.flux.index[-1]])
@@ -184,52 +211,50 @@ def plot_event(tool, event_no: int, filename: str | None = None) -> Figure:
     """
     p = tool.params
     num_plots = len([True for k in p.group_options.keys() for _ in p.group_options[k]])
-    fig_height = 2.5*num_plots
-    fig, axs = plt.subplots(figsize=(15, fig_height),
+    # the panels, and the title, legend and axis labels around them
+    fig, axs = plt.subplots(figsize=(PLOT_WIDTH, plot_height(p.panel_height, num_plots)),
                             nrows=num_plots,
                             ncols=1,
-                            sharex=True)
-    if num_plots == 1:
-        axs = [axs]
+                            sharex=True,
+                            squeeze=False,
+                            layout="constrained")
+    axs = axs[:, 0]
     time_formatter = mdates.ConciseDateFormatter(mdates.AutoDateLocator())
+    # the elements drawn in at least one panel, which are shown in the legend
+    drawn = set()
     i_ax = 0
     for particle in reference_iter(tool.particles, tool.reference_channel):
         for sensor in reference_iter(tool.sensors[particle], tool.reference_channel):
             for mevlbl in reference_iter(p.group_options[particle].keys(), tool.reference_channel):
-                ax_title_params = {
-                    "y": 0.85,
-                    "loc": "right",
-                    "fontdict": {"fontweight": "bold"},
-                    "color": "black"
-                }
+                ax_title_params = {"color": "black"}
                 axs[i_ax].grid()
                 axs[i_ax].set_yscale("log")
                 if pd.isna(tool.df_results.loc[(event_no, particle, sensor, mevlbl), "Onset Resolution"]):
-                    _plot_no_onset(axs[i_ax], tool, event_no, particle, sensor, mevlbl, ax_title_params)
+                    _plot_no_onset(axs[i_ax], tool, event_no, particle, sensor, mevlbl, ax_title_params, drawn)
                 else:
-                    _plot_channel(axs[i_ax], tool, event_no, particle, sensor, mevlbl, ax_title_params)
+                    _plot_channel(axs[i_ax], tool, event_no, particle, sensor, mevlbl, ax_title_params, drawn)
                 i_ax += 1
 
-    fig.suptitle(f"Event {event_no}", y=1.0005)
+    fig.suptitle(f"Event {event_no}")
     fig.supylabel(r"Flux (particle/(cm$^2$ s sr MeV))")
     fig.supxlabel("Time (UTC)")
     axs[-1].xaxis.set_major_formatter(time_formatter)
-    hl = [
-        ("Data", Line2D([0], [0], color="orange")),
-        ("Event Range", Patch(facecolor="black", alpha=0.1)),
-        ("BG sample", Patch(facecolor="green", alpha=0.3)),
-        ("BG Level", Line2D([0], [0], color="blue", linestyle="--")),
-        ("Peak Flux", Line2D([0], [0], marker="o", color="white", markerfacecolor="red")),
-        (f"{p.fluence_peak_fraction:g} × Peak Flux", Line2D([0], [0], color="purple", linestyle="--")),
-        (f"{p.onset_sigma:g}σ Threshold", Line2D([0], [0], color="red", linestyle="--")),
-        ("Onset Time", Line2D([0], [0], color="green", linestyle="--")),
-        ("Fluence", Patch(facecolor="brown", alpha=0.2)),
-        ("Shock Time", Line2D([0], [0], color="purple", linestyle=":")),
+    legend = [
+        ("data", "Data", Line2D([0], [0], color="orange")),
+        ("event_range", "Event Range", Patch(facecolor="black", alpha=0.1)),
+        ("bg_sample", "BG sample", Patch(facecolor="green", alpha=0.3)),
+        ("bg_level", "BG Level", Line2D([0], [0], color="blue", linestyle="--")),
+        ("peak_flux", "Peak Flux", Line2D([0], [0], marker="o", color="white", markerfacecolor="red")),
+        ("peak_fraction", f"{p.fluence_peak_fraction:g} × Peak Flux", Line2D([0], [0], color="purple", linestyle="--")),
+        ("threshold", f"{p.onset_sigma:g}σ Threshold", Line2D([0], [0], color="red", linestyle="--")),
+        ("onset", "Onset Time", Line2D([0], [0], color="green", linestyle="--")),
+        ("fluence", "Fluence", Patch(facecolor="brown", alpha=0.2)),
+        ("shock", "Shock Time", Line2D([0], [0], color="purple", linestyle=":")),
     ]
-    labels = [item[0] for item in hl]
-    handles = [item[1] for item in hl]
-    fig.legend(handles, labels, bbox_to_anchor=(0.5, 0.985), loc="upper center", ncol=10)
-    fig.tight_layout()
+    legend = [(label, handle) for key, label, handle in legend if key in drawn]
+    # above the first panel, below the title
+    axs[0].legend([handle for _, handle in legend], [label for label, _ in legend], loc="lower center",
+                  bbox_to_anchor=(0.5, 1.02), ncol=len(legend))
     if filename is not None:
         fig.savefig(filename)
     return fig
