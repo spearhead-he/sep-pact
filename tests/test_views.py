@@ -7,7 +7,7 @@ from matplotlib.figure import Figure
 from matplotlib.text import Text
 
 from spearhead.sep_pact.views import CORNER_PADDING, event_plot_filename, plot_event, plot_height
-from tests.helpers import T0, VIEWINGS, FakeEPD, image_compare, synthetic_tool
+from tests.helpers import T0, VIEWINGS, FakeEPD, bg_end_event, image_compare, synthetic_tool
 
 
 def panel_title(ax) -> Text:
@@ -97,7 +97,7 @@ def test_plot_event(tmp_path, monkeypatch):
 @image_compare
 def test_plot_event_copied_onsets_at_the_end_of_the_background(tmp_path, monkeypatch):
     rises = {("electrons", viewing): T0 for viewing in VIEWINGS}  # flat protons
-    events = {1: {"Onset Time": T0, "BG End": T0 - timedelta(minutes=2)}}
+    events = {1: bg_end_event(T0 - timedelta(minutes=2))}
     tool = run(synthetic_tool(tmp_path, monkeypatch, rises, events=events))
     fig = plot_event(tool, 1)
     assert all(panel_title(ax).get_color() == "red" for ax in fig.axes)  # every onset is at the end of the background

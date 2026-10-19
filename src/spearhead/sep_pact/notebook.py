@@ -6,7 +6,7 @@ and the plots in views.py.
 import html
 import os
 from copy import deepcopy
-from datetime import timedelta
+from datetime import datetime, timedelta
 from io import BytesIO
 
 import pandas as pd
@@ -17,11 +17,13 @@ from matplotlib import pyplot as plt
 from .analysis import SEPPACT
 from .conf import SEPPACT_parameters
 from .data import load_energies
-from .inputs import read_events, read_shocks
+from .inputs import EVENT_LIST_LAYOUTS, event_list_layout, make_events, read_events, read_shocks
 from .views import PLOT_WIDTH, plot_event, plot_height
 
 # the resolutions that can be chosen, in minutes
 RESOLUTION_CHOICES = (1, 2, 5, 10, 15, 30, 60)
+# the first date range added in the form: the data of the example event
+EXAMPLE_DATE_RANGE = (datetime(2021, 10, 31, 19), datetime(2021, 11, 3, 2, 5))
 # spike threshold of a resolution without one in the parameters
 DEFAULT_SPIKE_THRESHOLD = 2.0
 # number of channels listed at once in the channel selection of a group
@@ -56,6 +58,14 @@ def _count(n: int, noun: str) -> str:
 
 def _note(text: str) -> widgets.HTML:
     return widgets.HTML(f"<i>{html.escape(text)}</i>")
+
+
+def _set_enabled(widget, enabled: bool) -> None:
+    """Grays out (or activates again) the widget and all the widgets in it"""
+    if hasattr(widget, "disabled"):
+        widget.disabled = not enabled
+    for child in getattr(widget, "children", ()):
+        _set_enabled(child, enabled)
 
 
 def _section(title: str, *children) -> widgets.VBox:
@@ -163,36 +173,101 @@ class SEPPACT_notebook:
 
     # --- Events tab ---
     def _events_tab(self) -> widgets.VBox:
+        wgt_ranges = self._date_ranges_widget()
+        field_events = self._input_file("file_events", "Event list:", self._events_info,
+                                        "Path to a CSV file - leave blank to use the date ranges below")
+
+        def gray_out_ranges(_=None):
+            # the date ranges are used only without an event list
+            _set_enabled(wgt_ranges, not self.parameters.file_events)
+
+        self.widgets["file_events"].observe(gray_out_ranges, names="value")
+        gray_out_ranges()
+        layouts = "; ".join(", ".join(columns) for columns in EVENT_LIST_LAYOUTS.values())
         return widgets.VBox([
-            _section("Event list", self._input_file("file_events", "Event list:", self._events_info),
-                     _note("A CSV file with the columns Event No, Onset Time and optionally BG Start, BG End and "
-                           "End Time; see the user guide.")),
-            _section("Shock list", self._input_file("file_shocks", "Shock list:", self._shocks_info)),
-            _section("Event windows, where the event list leaves them empty",
-                     self._duration("bg_start_before_onset", "Background start before the onset", "hours"),
-                     self._duration("bg_end_before_onset", "Background end before the onset", "minutes"),
-                     self._duration("end_after_onset", "End after the onset", "hours"),
+            _section("Event list", field_events,
+                     _note(f"A CSV file with the column Event No, then one of: {layouts}. See the user guide.")),
+            _section("Date ranges, used without an event list", wgt_ranges),
+            _section("Shock list", self._input_file("file_shocks", "Shock list:", self._shocks_info, "Path to the file")),
+            _section("Event windows",
+                     self._duration("start_before_reference", "Data start before the Reference Time", "hours"),
+                     self._duration("end_after_reference", "Data end after the Reference Time", "hours"),
+                     _note("For event lists with a Reference Time."),
+                     self._duration("bg_start_after_start", "Default background start after the Start Time", "minutes"),
+                     self._duration("bg_end_after_start", "Default background end after the Start Time", "minutes"),
+                     _note("For the events without a background window."),
                      self._duration("min_plot_window", "Shortest data period", "days")),
         ])
 
-    def _input_file(self, parameter: str, description: str, info) -> widgets.VBox:
+    def _input_file(self, parameter: str, description: str, info, placeholder: str) -> widgets.VBox:
         """The path of an input file, with what it contains or why it cannot be read"""
-        field = self._text(parameter, description, "Path to the file")
+        field = self._text(parameter, description, placeholder)
         wgt_info = widgets.HTML(info(getattr(self.parameters, parameter)))
         self.widgets[parameter].observe(lambda traitlet: setattr(wgt_info, "value", info(traitlet["new"])),
                                         names="value")
+        self.widgets[f"{parameter}_info"] = wgt_info
         return widgets.VBox([field, wgt_info])
 
     def _events_info(self, path: str) -> str:
+        if not path:
+            n = len(self.parameters.date_ranges)
+            return html.escape(f"No event list: the {_count(n, 'date range')} below {'is' if n == 1 else 'are'} used.")
         if not os.path.isfile(path):
             return _error_text(f"File not found: {path}")
         try:
+            columns = pd.read_csv(path, nrows=0, index_col=0, skipinitialspace=True).columns.str.strip()
+            layout = event_list_layout(path, list(columns))
             events = read_events(path, self.parameters)
         except (ValueError, KeyError) as e:
             return _error_text(str(e))
-        onsets = events["Onset Time"]
-        return html.escape(f"{_count(len(events), 'event')}, with onsets from {onsets.min():%Y-%m-%d %H:%M} "
-                           f"to {onsets.max():%Y-%m-%d %H:%M}")
+        return html.escape(f"{_count(len(events), 'event')} ({layout}), from {events['Start Time'].min():%Y-%m-%d %H:%M} "
+                           f"to {events['End Time'].max():%Y-%m-%d %H:%M}")
+
+    def _date_ranges_widget(self) -> widgets.VBox:
+        """One row with the start and end of each event, and a button to add events"""
+        wrapper_rows = widgets.VBox()
+        wgt_error = widgets.HTML()
+        ranges = [list(date_range) for date_range in self.parameters.date_ranges]
+
+        def apply():
+            self._set_parameter("date_ranges", [tuple(date_range) for date_range in ranges], wgt_error)
+            # the summary of the events, below the path of the event list
+            if "file_events_info" in self.widgets:
+                self.widgets["file_events_info"].value = self._events_info(self.parameters.file_events)
+
+        def set_time(i, j, value):
+            ranges[i][j] = value
+            apply()
+
+        def remove(i):
+            del ranges[i]
+            show_rows()
+            apply()
+
+        def add(_):
+            ranges.append(list(ranges[-1]) if ranges else [EXAMPLE_DATE_RANGE[0], EXAMPLE_DATE_RANGE[1]])
+            show_rows()
+            apply()
+
+        def show_rows():
+            rows = []
+            for i, (start, end) in enumerate(ranges):
+                wgt_start = widgets.NaiveDatetimePicker(value=start, description=f"Event {i + 1} start:",
+                                                        style=self._style)
+                wgt_start.observe(lambda traitlet, i=i: set_time(i, 0, traitlet["new"]), names="value")
+                wgt_end = widgets.NaiveDatetimePicker(value=end, description="end:", style=self._style)
+                wgt_end.observe(lambda traitlet, i=i: set_time(i, 1, traitlet["new"]), names="value")
+                btn_remove = widgets.Button(description="Remove event", tooltip=f"Remove event {i + 1}")
+                btn_remove.on_click(lambda _, i=i: remove(i))
+                rows.append(widgets.HBox([wgt_start, wgt_end, btn_remove]))
+            wrapper_rows.children = rows
+
+        btn_add = widgets.Button(description="Add event")
+        btn_add.on_click(add)
+        show_rows()
+        self.widgets["date_ranges"] = wrapper_rows
+        self.widgets["add_event"] = btn_add
+        return widgets.VBox([wrapper_rows, btn_add, wgt_error])
 
     @staticmethod
     def _shocks_info(path: str) -> str:
@@ -268,7 +343,7 @@ class SEPPACT_notebook:
         """Reads the energies of the HET channels from the data of the first event; returns the error, if any"""
         self._energies = None
         try:
-            events = read_events(self.parameters.file_events, self.parameters)
+            events = make_events(self.parameters)
             self._energies = load_energies({"HET"}, self.parameters.level, events.iloc[0]["Plot Start"],
                                            events.iloc[0]["Plot End"], self.parameters.viewings[0],
                                            self.parameters.dir_data)["HET"]
@@ -276,7 +351,7 @@ class SEPPACT_notebook:
             if _is_connection_error(e):
                 advice = "the data server may be unavailable, read the channels again later."
             else:
-                advice = "check the event list, then read the channels again."
+                advice = "check the events, then read the channels again."
             return f"{e}. The energies of the HET channels could not be read from the data of the first event: {advice}"
         return ""
 
@@ -538,7 +613,7 @@ class SEPPACT_notebook:
 
         def set_options(_=None):
             numbers = flagged if wgt_flagged.value else list(self.seppact.events.index)
-            wgt_event.options = [(f"{n} ({self.seppact.events.loc[n, 'Onset Time']:%Y-%m-%d %H:%M})", n) for n in numbers]
+            wgt_event.options = [(f"{n} ({self.seppact.events.loc[n, 'Start Time']:%Y-%m-%d %H:%M})", n) for n in numbers]
             # the first event is shown, also without a click
             wgt_event.value = numbers[0] if numbers else None
 

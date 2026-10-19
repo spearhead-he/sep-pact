@@ -20,7 +20,7 @@ The tests are in `tests/`, one file per part of the tool:
 | File | Tests |
 |---|---|
 | `test_parameters.py` | Parameters: defaults, the checks of each value and their messages, unknown names, the checks between parameters, the reference channel |
-| `test_inputs.py` | The shock list and the event list: optional columns, default windows, the data period, invalid files |
+| `test_inputs.py` | The shock list and the event list: its layouts and examples, the default windows, the order of the times, the data period, the date ranges, invalid files and former Onset Time lists |
 | `test_data.py` | The channel layout, the grouping of the channels, the download with its cache and retries, the resampling |
 | `test_onsets.py` | Onset detection, data quality, and the choice of the onset: resolution, viewing, reference window, copied onsets, onsets at the end of the background, shocks |
 | `test_spikes.py` | Spike detection with the threshold of each resolution, and spike removal |

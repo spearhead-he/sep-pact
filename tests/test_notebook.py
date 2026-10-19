@@ -9,7 +9,7 @@ from ipywidgets import widgets
 import spearhead.sep_pact.data as data
 import spearhead.sep_pact.notebook as notebook
 from spearhead.sep_pact.notebook import SEPPACT_notebook
-from tests.helpers import T0, VIEWINGS, FakeEPD, make_params, write_events, write_shocks
+from tests.helpers import T0, VIEWINGS, FakeEPD, bg_end_event, make_params, write_events, write_shocks
 
 
 @pytest.fixture
@@ -29,7 +29,7 @@ def make_tool(tmp_path, monkeypatch, fake=None, events=None, **parameters) -> SE
     rises = {(particle, viewing): T0 for particle in ("electrons", "protons") for viewing in VIEWINGS}
     monkeypatch.setattr(data, "epd_load", fake or FakeEPD(rises))
     params = make_params(tmp_path, **parameters)
-    write_events(tmp_path / "inputs", events or {1: {"Onset Time": T0}})
+    write_events(tmp_path / "inputs", events or {1: {"Reference Time": T0}})
     write_shocks(tmp_path / "inputs", [T0 + timedelta(days=30)])
     tool = SEPPACT_notebook(params)
     tool.form = tool.parameters_form()
@@ -54,16 +54,19 @@ def test_form_sets_the_parameters(tmp_path, monkeypatch):
     p = tool.parameters
     tool.widgets["onset_sigma"].value = 2.5
     tool.widgets["onset_points"].value = 4
-    tool.widgets["bg_start_before_onset"].value = 3
-    tool.widgets["bg_end_before_onset"].value = 10
+    tool.widgets["start_before_reference"].value = 3
+    tool.widgets["end_after_reference"].value = 24
+    tool.widgets["bg_start_after_start"].value = 10
+    tool.widgets["bg_end_after_start"].value = 90
     tool.widgets["min_plot_window"].value = 1.5
     tool.widgets["quality_adjustable"].value = True
     tool.widgets["fallback_viewing"].value = "north"
     tool.widgets["dir_outputs"].value = "results"
     assert (p.onset_sigma, p.onset_points, p.quality_adjustable, p.fallback_viewing, p.dir_outputs) == \
         (2.5, 4, True, "north", "results")
-    assert (p.bg_start_before_onset, p.bg_end_before_onset, p.min_plot_window) == \
-        (timedelta(hours=3), timedelta(minutes=10), timedelta(days=1.5))
+    assert (p.start_before_reference, p.end_after_reference, p.bg_start_after_start, p.bg_end_after_start,
+            p.min_plot_window) == (timedelta(hours=3), timedelta(hours=24), timedelta(minutes=10),
+                                   timedelta(minutes=90), timedelta(days=1.5))
 
 
 def test_invalid_value_is_shown_and_stops_the_steps(tmp_path, monkeypatch, shown):
@@ -108,12 +111,14 @@ def test_resolutions_and_spike_thresholds(tmp_path, monkeypatch):
 
 
 def test_event_list_and_shock_list_info(tmp_path, monkeypatch):
-    tool = make_tool(tmp_path, monkeypatch, events={1: {"Onset Time": T0}, 2: {"Onset Time": T0 + timedelta(days=3)}})
-    assert tool._events_info(tool.parameters.file_events) == "2 events, with onsets from 2021-01-01 12:00 to 2021-01-04 12:00"
+    tool = make_tool(tmp_path, monkeypatch, events={1: {"Reference Time": T0}, 2: {"Reference Time": T0 + timedelta(days=3)}})
+    assert tool._events_info(tool.parameters.file_events) == \
+        "2 events (reference times), from 2021-01-01 10:00 to 2021-01-06 12:00"
     assert "File not found: missing.csv" in tool._events_info("missing.csv")
-    path = tmp_path / "no_onsets.csv"
+    path = tmp_path / "other_columns.csv"
     path.write_text("Event No,BG Start\n1,2021-01-01 10:00\n")
-    assert "has no column" in tool._events_info(str(path))
+    assert "Accepted columns" in tool._events_info(str(path))
+    assert tool._events_info("") == "No event list: the 0 date ranges below are used."
     assert "color: red" in tool._events_info(str(tmp_path / "events.xlsx"))
     assert tool._shocks_info(tool.parameters.file_shocks) == "1 shock"
     assert "File not found: missing.dat" in tool._shocks_info("missing.dat")
@@ -159,7 +164,7 @@ def test_channels_without_data(tmp_path, monkeypatch):
     tool = make_tool(tmp_path, monkeypatch, fake=FakeEPD(fail=1))
     section = tool._wrapper_channels.children[0]
     error, retry = section.children[1].children
-    assert "No data found" in error.value and "check the event list, then read the channels again" in error.value
+    assert "No data found" in error.value and "check the events, then read the channels again" in error.value
     # the groups are listed without the editor
     assert "1 MeV electrons: channels 0, 1, reference channel" in section.children[2].children[0].value
     assert tool.widgets["group_options"].children == ()
@@ -213,7 +218,8 @@ def shown_event(tool) -> int:
 
 
 def test_event_viewer(tmp_path, monkeypatch, shown):
-    events = {1: {"Onset Time": T0}, 2: {"Onset Time": T0, "BG End": T0 - timedelta(minutes=2)}}
+    events = {1: {**bg_end_event(T0 - timedelta(hours=1, minutes=55)), "BG Start": T0 - timedelta(hours=2)},
+              2: {**bg_end_event(T0 - timedelta(minutes=2)), "BG Start": T0 - timedelta(hours=2)}}
     rises = {(particle, viewing): T0 for particle in ("electrons", "protons") for viewing in VIEWINGS}
     tool = make_tool(tmp_path, monkeypatch, fake=FakeEPD(rises), events=events)
     tool.run_data()
@@ -299,3 +305,36 @@ def test_panel_height(tmp_path, monkeypatch):
     remove = tool.widgets["group_options"].children[4].children[1].children[2]
     remove.click()
     assert "With 4 channel groups, the plots are 15 inches wide and 13.5 inches high" in note.value
+
+
+def test_date_ranges(tmp_path, monkeypatch, shown):
+    tool = make_tool(tmp_path, monkeypatch)
+    rows = tool.widgets["date_ranges"]
+    # grayed out while there is an event list
+    assert tool.widgets["add_event"].disabled
+    tool.widgets["file_events"].value = ""
+    assert not tool.widgets["add_event"].disabled
+    tool.widgets["add_event"].click()
+    assert tool.parameters.date_ranges == [notebook.EXAMPLE_DATE_RANGE]
+    tool.widgets["add_event"].click()
+    start, end, _ = rows.children[1].children
+    start.value, end.value = T0, T0 + timedelta(hours=30)
+    assert tool.parameters.date_ranges == [notebook.EXAMPLE_DATE_RANGE, (T0, T0 + timedelta(hours=30))]
+    # a range that ends before it starts is not accepted
+    end.value = T0 - timedelta(hours=1)
+    assert "Event 2 of date_ranges: the start" in tool.errors["date_ranges"]
+    end.value = T0 + timedelta(hours=30)
+    assert tool.errors == {}
+    rows.children[0].children[2].click()
+    assert tool.parameters.date_ranges == [(T0, T0 + timedelta(hours=30))]
+    assert tool.widgets["file_events_info"].value == "No event list: the 1 date range below is used."
+    tool.widgets["file_events"].value = "x.csv"
+    assert all(button.disabled for button in all_widgets(rows) if isinstance(button, widgets.Button))
+
+
+def test_analysis_of_date_ranges(tmp_path, monkeypatch, shown):
+    tool = make_tool(tmp_path, monkeypatch, file_events="", date_ranges=[(T0 - timedelta(hours=2), T0 + timedelta(hours=48))])
+    tool.run_data()
+    tool.run_analysis()
+    assert tool.events.index.tolist() == [1]
+    assert tool.df_results["Onset Time"].notna().all()

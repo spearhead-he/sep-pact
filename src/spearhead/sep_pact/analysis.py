@@ -8,7 +8,7 @@ import pandas as pd
 
 from .conf import SEPPACT_parameters
 from .data import channel_layout, download_data, load_energies, resample_flux
-from .inputs import read_events, read_shocks
+from .inputs import make_events, read_shocks
 
 
 # the index of df_series, one row per series, and of df_results, one row per channel group of an event
@@ -399,10 +399,10 @@ class SEPPACT:
         return {key: list(spikes) for key, spikes in self.df_spikes.groupby(level=SERIES_INDEX, sort=False)["Spike Time"]}
 
     def run_inputs(self) -> None:
-        """Reads the shock list and the event list"""
+        """Reads the shock list and the events (the event list, or the date ranges without one)"""
         p = self.params
         self.shocktimes = read_shocks(p.file_shocks)
-        self.events = read_events(p.file_events, p)
+        self.events = make_events(p)
 
     def run_data(self, redownload: bool = False) -> None:
         """Loads the flux of the channel groups (from the cache, or downloads it), and resamples it"""

@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from spearhead.sep_pact.analysis import choose_onset, onset_detection_sigma, quality_analysis, reference_iter
-from tests.helpers import T0, VIEWINGS, channel_rows, synthetic_tool
+from tests.helpers import T0, VIEWINGS, bg_end_event, channel_rows, synthetic_tool
 
 MINUTE = timedelta(minutes=1)
 
@@ -121,7 +121,7 @@ def test_onset_copied_from_the_reference_channel(tmp_path, monkeypatch):
 
 
 def test_onset_at_the_end_of_the_background(tmp_path, monkeypatch):
-    events = {1: {"Onset Time": T0, "BG End": T0 - timedelta(minutes=2)}}
+    events = {1: bg_end_event(T0 - timedelta(minutes=2))}
     tool = synthetic_tool(tmp_path, monkeypatch, events=events)
     tool.run_onsets()
     assert onset(tool, "electrons", "1 MeV") == pd.Timestamp(T0 - timedelta(minutes=2))

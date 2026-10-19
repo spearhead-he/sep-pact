@@ -66,7 +66,7 @@ params.check()
 
 | Method | Step |
 |---|---|
-| `run_inputs()` | Reads the shock list and the event list |
+| `run_inputs()` | Reads the shock list and the events: the event list, or `date_ranges` without one |
 | `run_data(redownload=False)` | Loads the flux of the channel groups from the cache, or downloads it (always with `redownload=True`) and resamples it |
 | `run_onsets()` | Detects the onsets of every resolution and viewing (`calculate_onsets()`), and chooses one per event and channel group (`select_onsets()`) |
 | `run_spikes()` | Finds the spikes after the chosen onsets |
@@ -81,7 +81,7 @@ After the steps, the results are attributes of the `SEPPACT` object:
 
 | Attribute | Content |
 |---|---|
-| `events` | The event list, with the windows filled in and the period of data (`Plot Start`, `Plot End`) |
+| `events` | The events: `Start Time`, `BG Start`, `BG End`, `End Time` and `Reference Time` (if given), with the default windows filled in, and the period of data (`Plot Start`, `Plot End`) |
 | `shocktimes` | The times of the shocks (`pandas.Series`) |
 | `dfs_flux` | The flux of the channel groups: `dfs_flux[particle][sensor][resolution]` is a DataFrame indexed by event number and time, with the columns (viewing, group) |
 | `df_series` | The results of every series: one row per event, particle, sensor, channel group (`Energy Label`), resolution and viewing (see below) |
@@ -149,7 +149,7 @@ tool.df_results           # the same as tool.seppact.df_results
 | Module | Content |
 |---|---|
 | `conf` | `SEPPACT_parameters`, and the default channel groups and spike thresholds |
-| `inputs` | `read_shocks(path)` and `read_events(path, params)` |
+| `inputs` | `read_shocks(path)`, `read_events(path, params)` and `make_events(params)` (the event list, or the date ranges), and `EVENT_LIST_LAYOUTS`, the accepted columns of the event list |
 | `data` | `load()`, which returns the EPD data of each particle as `ParticleData` (the flux with the channel numbers as columns, and the energies of the channels), `load_energies()`, `group_channels_de()`, `flux_cache_file()`, `download_data()` and `resample_flux()`: the EPD data, the flux of the channel groups and its cache |
 | `analysis` | `SEPPACT`, and the functions of the steps: `onset_detection_sigma()` (which returns the onset, the background start and end, and the background level and threshold), `quality_analysis()`, `choose_onset()`, `choose_peak()`, `choose_fluence()`, `detect_spikes()`, `remove_spikes()`, `get_peak_flux()`, `fluence_interval()`, `peak_search_end()` and `shocks_in_range()` |
 | `views` | `plot_event()` and `event_plot_filename()` |

@@ -1,6 +1,6 @@
 """SEPPACT_parameters, the parameters of the analysis, with their defaults and checks"""
 from dataclasses import dataclass, field, fields
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import ClassVar
 
 
@@ -47,6 +47,12 @@ def default_spike_thresholds() -> dict:
 # Removed parameters: {name: (version, what to use instead)}
 REMOVED_PARAMETERS = {
     "dir_inputs": ("0.2.0", "Give the event list and the shock list as paths, in file_events and file_shocks."),
+    "bg_start_before_onset": ("0.2.0", "The event list has a Reference Time instead of an Onset Time: the data start "
+                                       "start_before_reference before it, and the default background starts "
+                                       "bg_start_after_start after the Start Time."),
+    "bg_end_before_onset": ("0.2.0", "The default background ends bg_end_after_start after the Start Time."),
+    "end_after_onset": ("0.2.0", "The event list has a Reference Time instead of an Onset Time: the data end "
+                                 "end_after_reference after it."),
 }
 
 
@@ -63,7 +69,8 @@ class SEPPACT_parameters:
     SENSORS: ClassVar[tuple] = ("HET",)
 
     # Files and folders
-    # event list: Event No, Onset Time and optionally BG Start, BG End, End Time
+    # event list: Event No, then Reference Time, or Start Time and End Time with optionally BG Start and BG End;
+    # without an event list (""), the events are date_ranges
     file_events: str = "inputs/events_example.csv"
     file_shocks: str = "inputs/shocks.dat"     # interplanetary shock list from ipshocks.helsinki.fi
     dir_data: str = "data"                     # downloaded EPD files
@@ -71,10 +78,16 @@ class SEPPACT_parameters:
     dir_plots: str = "plots"                   # one figure per event
     dir_outputs: str = "outputs"               # result tables
 
-    # Event windows, used where the event list leaves them empty
-    bg_start_before_onset: timedelta = timedelta(hours=2)
-    bg_end_before_onset: timedelta = timedelta(minutes=5)
-    end_after_onset: timedelta = timedelta(hours=48)
+    # Events without an event list: [(start, end)] of each event, as datetime
+    date_ranges: list[tuple] = field(default_factory=list)
+
+    # Event windows
+    # the data of an event with a Reference Time start and end this long before and after it
+    start_before_reference: timedelta = timedelta(hours=2)
+    end_after_reference: timedelta = timedelta(hours=48)
+    # the default background window, of the events without one, starts and ends this long after the Start Time
+    bg_start_after_start: timedelta = timedelta(0)
+    bg_end_after_start: timedelta = timedelta(hours=1, minutes=55)
     min_plot_window: timedelta = timedelta(days=2)    # shorter events are extended equally on both sides
 
     # Data
@@ -127,8 +140,10 @@ class SEPPACT_parameters:
 
     # Check of the value of each parameter that has one, independently of the other parameters
     VALUE_CHECKS: ClassVar[dict] = {
-        **{name: "_check_timedelta" for name in ("bg_start_before_onset", "bg_end_before_onset", "end_after_onset",
-                                                 "min_plot_window", "reference_onset_window", "peak_window_min")},
+        **{name: "_check_timedelta" for name in ("start_before_reference", "end_after_reference", "bg_start_after_start",
+                                                 "bg_end_after_start", "min_plot_window", "reference_onset_window",
+                                                 "peak_window_min")},
+        "date_ranges": "_check_date_ranges",
         **{name: "_check_count" for name in ("onset_points", "fluence_points", "download_tries")},
         "viewings": "_check_viewings",
         "fallback_viewing": "_check_fallback_viewing",
@@ -142,6 +157,16 @@ class SEPPACT_parameters:
     def _check_timedelta(name: str, value) -> None:
         if not isinstance(value, timedelta):
             raise TypeError(f"{name} must be a datetime.timedelta, e.g. timedelta(hours=2), not {value!r}.")
+
+    @staticmethod
+    def _check_date_ranges(name: str, value) -> None:
+        for i, date_range in enumerate(value, start=1):
+            if not (isinstance(date_range, (tuple, list)) and len(date_range) == 2
+                    and all(isinstance(t, datetime) for t in date_range)):
+                raise TypeError(f"{name} must be a list of (start, end) datetime pairs; event {i} is {date_range!r}.")
+            if date_range[0] >= date_range[1]:
+                raise ValueError(f"Event {i} of {name}: the start ({date_range[0]}) must be before the end "
+                                 f"({date_range[1]}).")
 
     @staticmethod
     def _check_count(name: str, value) -> None:
@@ -199,6 +224,9 @@ class SEPPACT_parameters:
 
     def check(self) -> None:
         """Checks the parameters that depend on each other"""
+        if self.bg_start_after_start >= self.bg_end_after_start:
+            raise ValueError(f"bg_start_after_start ({self.bg_start_after_start}) must be before bg_end_after_start "
+                             f"({self.bg_end_after_start}).")
         missing_thresholds = [freq for freq in self.resample_freqs if freq not in self.spike_thresholds]
         if missing_thresholds:
             raise ValueError(f"spike_thresholds has no threshold for the resolutions {missing_thresholds}. "
