@@ -12,7 +12,7 @@
   - [How to install](#how-to-install)
   - [How to use](#how-to-use)
   - [Example output](#example-output)
-  - [What's new in v0.2.0](#whats-new-in-v020)
+  - [What's new in v0.3.0](#whats-new-in-v030)
   - [Documentation](#documentation)
   - [Contributing](#contributing)
   - [Acknowledgement](#acknowledgement)
@@ -79,14 +79,13 @@ The plot of the example event (2021-11-01) has one panel per channel group: 1 Me
 
 A red title marks a channel group without an onset, and an orange title one with its onset at the end of the background window. The [user guide](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#plots) explains every element of the plot.
 
-## What's new in v0.2.0
+## What's new in v0.3.0
 
-- **Notebook form:** all the parameters in tabs, with an editor of the energy channel groups and checks of every value, then one cell per step, and an event viewer to check the plot and results of each event.
-- **Choice per channel group:** the onset, peak flux and fluence are calculated at every resolution and viewing, and one result of each is chosen, with a data quality check, a reference channel and spike removal.
-- **Inputs and outputs:** the event list is a CSV file with the layouts of the SPEARHEAD VDA tool (reference times or datetime ranges), or date ranges set in the form; the results are in `outputs/results.csv`, one row per event and channel group.
-- **Package:** `spearhead.sep_pact`, also usable in scripts, tested with Python 3.11 to 3.14.
+- **Event times:** a new notebook step, `tool.event_times()`, sets the background window and the end time of each event with sliders over its data, warns about background windows with too few points, and saves the event list with the times for later runs. See [Event times](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#event-times-step).
+- **Onset corrections:** in the event viewer, the onset of each channel group can be set to another detected onset or to no onset; the peak flux and fluence are calculated again, and the corrections can be saved and applied in later runs. See [Onset corrections](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#onset-corrections).
+- **Plots:** a legend entry for every line, grouped by quantity, more distinct line styles, and orange panel titles for onsets at the end of the background window.
 
-The results change from v0.1.0. See the [CHANGELOG](https://github.com/spearhead-he/sep-pact/blob/main/CHANGELOG.md) for all the changes and how to upgrade.
+The results do not change unless the event times or the onsets are changed; `results.csv` has three new columns. See the [CHANGELOG](https://github.com/spearhead-he/sep-pact/blob/main/CHANGELOG.md) for all the changes and how to upgrade.
 
 ## Documentation
 
