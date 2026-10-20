@@ -68,21 +68,27 @@ def _date_range_events(date_ranges: list) -> pd.DataFrame:
                         index=pd.Index(range(1, len(date_ranges) + 1), name="Event No")).astype("datetime64[ns]")
 
 
+def window_order_error(row: pd.Series) -> str | None:
+    """Returns why the times of an event are not in the order Start Time <= BG Start < BG End < End Time, or None"""
+    if row["Start Time"] <= row["BG Start"] < row["BG End"] < row["End Time"]:
+        return None
+    return (f"the times must be in the order Start Time <= BG Start < BG End < End Time, not {row['Start Time']}, "
+            f"{row['BG Start']}, {row['BG End']}, {row['End Time']}.")
+
+
 def _check_event_windows(events: pd.DataFrame, source: str) -> None:
     """Checks that the times of each event are given, and that its background window is inside its data range"""
     for event_no, row in events.iterrows():
         missing = [column for column in ("Start Time", "End Time") if pd.isna(row[column])]
         if missing:
             raise ValueError(f"Event {event_no} of {source} has no {' and no '.join(missing)}.")
-        if not row["Start Time"] <= row["BG Start"] < row["BG End"] < row["End Time"]:
-            raise ValueError(f"Event {event_no} of {source}: the times must be in the order Start Time <= BG Start < "
-                             f"BG End < End Time, not {row['Start Time']}, {row['BG Start']}, {row['BG End']}, "
-                             f"{row['End Time']}.")
+        if error := window_order_error(row):
+            raise ValueError(f"Event {event_no} of {source}: {error}")
 
 
 def complete_events(df_event_times: pd.DataFrame, params: SEPPACT_parameters, source: str) -> pd.DataFrame:
-    """Returns the events with all their times, the default ones where they are missing, and their period of data
-    (Plot Start, Plot End)
+    """Returns the events with all their times, the default ones where they are missing, their period of data
+    (Plot Start, Plot End), and where their background window comes from (BG Window: "event list" or "default")
 
     The data of events with a Reference Time start start_before_reference before it and end end_after_reference after
     it. Events without a background window get the default one, bg_start_after_start to bg_end_after_start after
@@ -93,6 +99,7 @@ def complete_events(df_event_times: pd.DataFrame, params: SEPPACT_parameters, so
     events["Start Time"] = events["Start Time"].fillna(references - params.start_before_reference)
     events["End Time"] = events["End Time"].fillna(references + params.end_after_reference)
     without_bg = events["BG Start"].isna() & events["BG End"].isna()
+    bg_window = pd.Series("event list", index=events.index).where(~without_bg, "default")
     events.loc[without_bg, "BG Start"] = events.loc[without_bg, "Start Time"] + params.bg_start_after_start
     events.loc[without_bg, "BG End"] = events.loc[without_bg, "Start Time"] + params.bg_end_after_start
     events["BG Start"] = events["BG Start"].fillna(events["Start Time"])
@@ -102,6 +109,7 @@ def complete_events(df_event_times: pd.DataFrame, params: SEPPACT_parameters, so
     buffer_time = ((params.min_plot_window - (events["End Time"] - events["Start Time"])) / 2).clip(lower=timedelta(0))
     events["Plot Start"] = events["Start Time"] - buffer_time
     events["Plot End"] = events["End Time"] + buffer_time
+    events["BG Window"] = bg_window
     return events
 
 
