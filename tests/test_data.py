@@ -158,3 +158,43 @@ def test_resample_flux(events, tmp_path, monkeypatch):
     start = pd.Timestamp(T0)
     assert two[start] == pytest.approx(raw[start:start + timedelta(seconds=119)].mean())
     assert two.index[1] - two.index[0] == timedelta(minutes=2)
+
+
+class DownloadingEPD(FakeEPD):
+    """FakeEPD that writes a file into the data folder at each call, as a download does"""
+
+    def __call__(self, sensor, level, startdate, enddate, viewing, path, autodownload) -> tuple:
+        os.makedirs(path, exist_ok=True)
+        open(os.path.join(path, f"file_{len(self.calls)}.cdf"), "w").close()
+        return super().__call__(sensor, level, startdate, enddate, viewing, path, autodownload)
+
+
+def test_download_messages(events, tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(data, "epd_load", DownloadingEPD())
+    folder = str(tmp_path / "data")
+    events = events.rename(index={1: 20})
+
+    def load_data():
+        download_data(events, "l2", ["sun", "north"], default_group_options(), energy_tables(), folder, str(tmp_path), 2)
+        return capsys.readouterr().out
+
+    out = load_data()
+    assert "No cache" in out and "for these events and settings" in out
+    assert f"Loading the l2 data of 1 event; the files missing from {folder} are downloaded." in out
+    # one file per viewing; the progress is the position of the event in the list, not its number
+    assert "Event 20... loaded, 2 files downloaded (100.00%)" in out
+    assert "Loading the flux of the channel groups from the cache" in load_data()
+
+
+def test_download_message_without_new_files(events, tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(data, "epd_load", FakeEPD())
+    download_data(events, "l2", ["sun"], default_group_options(), energy_tables(), str(tmp_path / "data"),
+                  str(tmp_path), 2)
+    assert "Event 1... loaded (100.00%)" in capsys.readouterr().out
+
+
+def test_download_message_of_a_retry(events, tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(data, "epd_load", FakeEPD(fail=1))
+    download_data(events, "l2", ["sun"], default_group_options(), energy_tables(), str(tmp_path / "data"),
+                  str(tmp_path), 2)
+    assert "No HET l2 sun data from" in capsys.readouterr().out

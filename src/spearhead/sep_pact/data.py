@@ -5,6 +5,7 @@ numbers as columns and the energies of the channels.
 """
 import hashlib
 import json
+import os
 from datetime import datetime, timedelta
 from os.path import exists as pexists
 from os.path import join as pjoin
@@ -158,12 +159,10 @@ def _load_with_retries(row: pd.Series,
         except ValueError:
             if tries >= tries_max:
                 raise
-            print("\n", sensor, level, startdate, enddate, viewing)
+            print(f"\nNo {sensor} {level} {viewing} data from {startdate} to {enddate}; trying the background start to "
+                  "the end time.")
             startdate = row["BG Start"]
             enddate = row["End Time"]
-            print("Retrying with shortened time range\n", sensor, level, startdate, enddate, viewing)
-    if len(data) == 0:
-        print("FAILED/No Data\n", sensor, level, startdate, enddate, viewing)
     return data, startdate, enddate
 
 
@@ -187,6 +186,11 @@ def _add_flux(frames: pd.DataFrame, new: pd.DataFrame) -> pd.DataFrame:
     return frames.groupby(level=[0, 1]).sum(min_count=1).sort_index()
 
 
+def _count_files(path: str) -> int:
+    """Returns the number of files in the folder and its subfolders (0 if it does not exist)"""
+    return sum(len(files) for _, _, files in os.walk(path))
+
+
 def download_data(events: pd.DataFrame,
                   level: str,
                   viewings: list[str],
@@ -200,16 +204,18 @@ def download_data(events: pd.DataFrame,
     cache_file = flux_cache_file(events, level, viewings, group_options, cache_folder)
     if not redownload:
         if pexists(cache_file):
-            print(f"Loading the flux DataFrames from {cache_file}.")
+            print(f"Loading the flux of the channel groups from the cache {cache_file}.")
             return pd.read_pickle(cache_file)
-        print(f"{cache_file} does not exist. Proceeding with download.")
+        print(f"No cache {cache_file} for these events and settings.")
     particles, sensors, _, sensors_all = channel_layout(group_options)
     dfs_flux = {particle: {sensor: {"no_resample": pd.DataFrame([])} for sensor in sensors[particle]}
                 for particle in particles}
-    print(f"Downloading {level} data...")
-    for event_no, row in events.iterrows():
+    n_events = f"{len(events)} event{'' if len(events) == 1 else 's'}"
+    print(f"Loading the {level} data of {n_events}; the files missing from {path} are downloaded.")
+    for position, (event_no, row) in enumerate(events.iterrows(), start=1):
         current = {particle: {sensor: pd.DataFrame([]) for sensor in sensors[particle]} for particle in particles}
         print(f"Event {event_no}", end="... ")
+        files_before = _count_files(path)
         for viewing in viewings:
             for sensor in sensors_all:
                 data, startdate, enddate = _load_with_retries(row, sensor, level, viewing, path, tries_max)
@@ -230,7 +236,8 @@ def download_data(events: pd.DataFrame,
                 dfs_flux[particle][sensor]["no_resample"] = current[particle][sensor].copy() if previous.empty \
                     else pd.concat([previous, current[particle][sensor]], axis="index")
 
-        print(f"Downloaded/Loaded ({event_no/len(events)*100:.2f}%)")
+        downloaded = _count_files(path) - files_before
+        print(f"loaded{f', {downloaded} files downloaded' if downloaded else ''} ({position / len(events) * 100:.2f}%)")
     pd.to_pickle(dfs_flux, cache_file)
     return dfs_flux
 
