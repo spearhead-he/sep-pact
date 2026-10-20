@@ -3,6 +3,7 @@ import os
 import re
 from datetime import timedelta
 
+import pandas as pd
 import pytest
 from ipywidgets import widgets
 
@@ -129,6 +130,20 @@ def test_event_list_and_shock_list_info(tmp_path, monkeypatch):
     assert tool.parameters.file_events == str(path)
 
 
+def test_corrections_file_info(tmp_path, monkeypatch):
+    tool = make_tool(tmp_path, monkeypatch)
+    assert tool.widgets["file_corrections_info"].value == "No corrections: the onsets are chosen automatically."
+    path = tmp_path / "corrections.csv"
+    path.write_text("Event No,Particle,Sensor,Energy Label,Onset Resolution,Onset Viewing,Onset Time\n"
+                    "1,electrons,HET,1 MeV,2,asun,2021-01-01 13:00:00\n1,protons,HET,8 MeV,,,\n")
+    tool.widgets["file_corrections"].value = str(path)
+    assert tool.parameters.file_corrections == str(path)
+    assert tool.widgets["file_corrections_info"].value == "2 corrections, applied after the automatic choice."
+    assert "File not found: missing.csv" in tool._corrections_info("missing.csv")
+    path.write_text("Event No,Particle\n1,electrons\n")
+    assert "have no column" in tool._corrections_info(str(path))
+
+
 def group_by_label(tool, label):
     return next(group for group in tool._groups if group["label"] == label)
 
@@ -182,10 +197,11 @@ def test_channels_without_connection(tmp_path, monkeypatch):
 
 def test_steps_need_the_previous_ones(tmp_path, monkeypatch, shown):
     tool = make_tool(tmp_path, monkeypatch)
+    tool.event_times()
     tool.run_analysis()
     tool.event_viewer()
     tool.save_results()
-    assert shown_text(shown).count("run the data step first") == 1
+    assert shown_text(shown).count("run the data step first") == 2
     assert shown_text(shown).count("run the analysis step first") == 2
 
 
@@ -206,6 +222,121 @@ def test_steps_of_the_analysis(tmp_path, monkeypatch, shown):
     assert tool.df_results["Onset Time"].notna().all()
     assert len(tool.df_series) == 5 * 4 * 4 and tool.events.index.tolist() == [1] and tool.df_spikes.empty
     assert "5 of 5 channel groups (1 event) have an onset: 0 copied" in shown_text(shown)
+
+
+def bg_window(tool, event_no=1) -> list:
+    return list(tool.events.loc[event_no, ["BG Start", "BG End", "BG Window Source"]])
+
+
+def test_event_times(tmp_path, monkeypatch, shown):
+    tool = make_tool(tmp_path, monkeypatch)
+    tool.run_data()
+    tool.event_times()
+    w = tool.widgets
+    # the first event is shown without a click: the slider at its default window, 10:00 to 11:55, its points and plot
+    assert w["bg_event"].value == 1 and w["bg_window"].index == (0, 57)
+    assert w["bg_window"].value == (pd.Timestamp(T0 - timedelta(hours=2)), pd.Timestamp(T0 - timedelta(minutes=6)))
+    assert bg_window(tool)[2] == "default"
+    assert "Background 2021-01-01 10:00 to 2021-01-01 11:55 (default); points: 58 at 2 min, 24 at 5 min" \
+        in w["bg_status"].value
+    assert bytes(w["bg_plot"].value).startswith(b"\x89PNG")
+    # the slider ends one point before the end time
+    assert w["bg_window"].options[-1][1] == pd.Timestamp(T0 + timedelta(hours=48, minutes=-2))
+    plot = w["bg_plot"].value
+    w["bg_window"].index = (30, 45)
+    assert bg_window(tool) == [pd.Timestamp(T0 - timedelta(hours=1)), pd.Timestamp(T0 - timedelta(minutes=30)), "set"]
+    assert "(set)" in w["bg_status"].value and "2 points at the 30 min resolution" in w["bg_status"].value
+    assert w["bg_plot"].value != plot
+    # an empty window is not set
+    w["bg_window"].index = (40, 40)
+    assert "is not valid" in w["bg_status"].value and bg_window(tool)[2] == "set"
+    w["bg_reset"].click()
+    assert w["bg_window"].index == (0, 57) and bg_window(tool)[2] == "default"
+    assert "Run the analysis step again" not in w["bg_status"].value
+
+
+def end_time(tool, event_no=1) -> list:
+    return list(tool.events.loc[event_no, ["End Time", "End Time Source"]])
+
+
+def test_event_times_end_time(tmp_path, monkeypatch, shown):
+    tool = make_tool(tmp_path, monkeypatch)
+    tool.run_data()
+    tool.event_times()
+    w = tool.widgets
+    # the end time slider goes from after the background window to the end of the data, and starts at the closest data
+    # point before the end time; the end time is not changed until the slider is moved
+    last = pd.Timestamp(T0 + timedelta(hours=48, minutes=-2))
+    assert w["end_time"].options[0][1] == pd.Timestamp(T0 - timedelta(minutes=4))
+    assert w["end_time"].value == last == w["end_time"].options[-1][1]
+    assert end_time(tool) == [pd.Timestamp(T0 + timedelta(hours=48)), "default"]
+    assert "End time 2021-01-03 12:00 (default)." in w["bg_status"].value
+    plot = w["bg_plot"].value
+    w["end_time"].value = pd.Timestamp(T0 + timedelta(hours=24))
+    assert end_time(tool) == [pd.Timestamp(T0 + timedelta(hours=24)), "set"]
+    assert "End time 2021-01-02 12:00 (set)." in w["bg_status"].value and w["bg_plot"].value != plot
+    # the background window ends before the end time, and the end time after the background window
+    assert w["bg_window"].options[-1][1] == pd.Timestamp(T0 + timedelta(hours=24, minutes=-2))
+    w["bg_window"].index = (30, 45)
+    assert w["end_time"].options[0][1] == pd.Timestamp(T0 - timedelta(minutes=28))
+    assert w["end_time"].value == pd.Timestamp(T0 + timedelta(hours=24))
+    # the reset gives back both the window and the end time
+    w["bg_reset"].click()
+    assert end_time(tool) == [pd.Timestamp(T0 + timedelta(hours=48)), "default"] and bg_window(tool)[2] == "default"
+    assert w["end_time"].value == last
+
+
+def test_event_times_after_the_analysis(tmp_path, monkeypatch, shown):
+    tool = make_tool(tmp_path, monkeypatch)
+    tool.run_data()
+    tool.run_analysis()
+    tool.event_times()
+    tool.widgets["bg_window"].index = (30, 45)
+    assert "Run the analysis step again" in tool.widgets["bg_status"].value
+
+
+def test_event_times_of_the_events_with_warnings(tmp_path, monkeypatch, shown):
+    events = {1: {**bg_end_event(T0 - timedelta(minutes=5)), "BG Start": T0 - timedelta(hours=2)},
+              2: {**bg_end_event(T0 - timedelta(minutes=90)), "BG Start": T0 - timedelta(hours=2)}}
+    tool = make_tool(tmp_path, monkeypatch, events=events)
+    tool.run_data()
+    tool.event_times()
+    w = tool.widgets
+    assert "Only the 1 event with background warnings" in w["bg_warned_only"].description
+    w["bg_warned_only"].value = True
+    assert [value for _, value in w["bg_event"].options] == [2] and w["bg_event"].value == 2
+    assert w["bg_window"].index == (0, 15) and "fewer than 3" in w["bg_status"].value
+    tool.events.loc[2, "BG End"] = T0 - timedelta(minutes=30)
+    w["bg_warned_only"].value = False
+    assert w["bg_event"].value == 1
+
+
+def test_event_times_without_events_with_warnings(tmp_path, monkeypatch, shown):
+    tool = make_tool(tmp_path, monkeypatch)
+    tool.run_data()
+    tool.event_times()
+    tool.widgets["bg_warned_only"].value = True
+    assert tool.widgets["bg_event"].value is None
+    assert tool.widgets["bg_status"].value == "" and bytes(tool.widgets["bg_plot"].value) == b""
+
+
+def test_save_events(tmp_path, monkeypatch, shown):
+    tool = make_tool(tmp_path, monkeypatch)
+    tool.run_data()
+    tool.event_times()
+    w = tool.widgets
+    w["bg_window"].index = (30, 45)
+    assert w["events_path"].value == os.path.join(tool.parameters.dir_outputs, "events.csv")
+    w["events_path"].value = str(tmp_path / "new" / "events_with_windows.csv")
+    w["save_events"].click()
+    assert "Saved the event list to" in w["events_saved"].value
+    saved = pd.read_csv(tmp_path / "new" / "events_with_windows.csv", index_col=0)
+    assert list(saved.loc[1]) == ["2021-01-01 10:00:00", "2021-01-01 11:00:00", "2021-01-01 11:30:00",
+                                  "2021-01-03 12:00:00"]
+    w["events_path"].value = str(tmp_path / "file" / "events.csv")
+    (tmp_path / "file").write_text("")
+    w["save_events"].click()
+    assert "Error" in w["events_saved"].value
 
 
 def shown_event(tool) -> int:
@@ -237,6 +368,82 @@ def test_event_viewer(tmp_path, monkeypatch, shown):
     assert tool._flagged_events() == [2]
     tool.widgets["flagged_only"].value = True
     assert [value for _, value in tool.widgets["event"].options] == [2] and tool.widgets["event"].value == 2
+
+
+def onset_values(tool) -> list:
+    return [value for _, value in tool.widgets["onset"].options]
+
+
+def test_onset_correction(tmp_path, monkeypatch, shown):
+    rises = {(particle, viewing): T0 if viewing == "sun" else T0 + timedelta(hours=1)
+             for particle in ("electrons", "protons") for viewing in VIEWINGS}
+    events = {1: {"Reference Time": T0}, 2: {"Reference Time": T0 + timedelta(minutes=30)}}
+    tool = make_tool(tmp_path, monkeypatch, fake=FakeEPD(rises), events=events)
+    tool.run_data()
+    tool.run_analysis()
+    tool.event_viewer()
+    w = tool.widgets
+    two = pd.Timedelta(minutes=2)
+    # the first channel group of the first event, with its detected onsets and its chosen one
+    assert w["group"].value == ("electrons", "HET", "1 MeV") and w["onset"].value == (two, "sun")
+    assert onset_values(tool)[0] is None and len(onset_values(tool)) == 1 + 4 * 4
+    assert w["onset"].options[1][0] == "2021-01-01 11:58, 2 min, sun"
+    assert w["onset_status"].value == "Chosen automatically"
+    plot = w["plot"].value
+    # while the event is calculated again, a note is shown and the correction cannot be changed
+    statuses = []
+    w["onset_status"].observe(lambda change: statuses.append((change["new"], w["onset"].disabled)), names="value")
+    w["onset"].value = (two, "asun")
+    assert statuses[0] == ("\u23f3 Calculating the peak flux and fluence of event 1 again, and drawing its plot...", True)
+    assert statuses[-1] == ("Corrected", False) and not w["onset_reset"].disabled
+    assert tool.seppact.corrections == {(1, "electrons", "HET", "1 MeV"): (two, "asun")}
+    assert w["onset_status"].value == "Corrected" and w["plot"].value != plot
+    assert "<td>asun</td>" in w["table"].value
+    w["group"].value = ("protons", "HET", "8 MeV")
+    w["onset"].value = None
+    assert pd.isna(tool.df_results.loc[(1, "protons", "HET", "8 MeV"), "Onset Time"])
+    # the other event has its own groups and onsets
+    w["next"].click()
+    assert w["group"].value == ("electrons", "HET", "1 MeV") and w["onset_status"].value == "Chosen automatically"
+    w["previous"].click()
+    assert w["group"].value == ("electrons", "HET", "1 MeV") and w["onset"].value == (two, "asun")
+    w["onset_reset"].click()
+    assert w["onset"].value == (two, "sun") and w["onset_status"].value == "Chosen automatically"
+    assert list(tool.seppact.corrections) == [(1, "protons", "HET", "8 MeV")]
+    # the corrections are saved, and applied again from the file
+    w["corrections_path"].value = str(tmp_path / "new" / "corrections.csv")
+    w["save_corrections"].click()
+    assert "Saved 1 correction to" in w["corrections_saved"].value
+    tool.widgets["file_corrections"].value = str(tmp_path / "new" / "corrections.csv")
+    tool.run_data()
+    tool.run_analysis()
+    assert tool.df_results["Onset Corrected"].tolist() == [False, False, True, False, False] + [False] * 5
+
+
+def test_event_viewer_explains_the_panel_titles(tmp_path, monkeypatch, shown):
+    tool = make_tool(tmp_path, monkeypatch)
+    tool.run_data()
+    tool.run_analysis()
+    tool.event_viewer()
+    assert "Panel titles in red: channel groups without an onset" in " ".join(
+        w.value for w in all_widgets(shown[-1]) if isinstance(w, widgets.HTML))
+
+
+def test_onset_option_notes():
+    row = pd.Series({"Onset Time": pd.Timestamp(T0), "Usable": False, "Onset Copied": True})
+    assert SEPPACT_notebook._onset_option(pd.Timedelta(minutes=30), "north", row) == \
+        "2021-01-01 12:00, 30 min, north (not usable, copied)"
+
+
+def test_save_corrections_error(tmp_path, monkeypatch, shown):
+    tool = make_tool(tmp_path, monkeypatch)
+    tool.run_data()
+    tool.run_analysis()
+    tool.event_viewer()
+    (tmp_path / "file").write_text("")
+    tool.widgets["corrections_path"].value = str(tmp_path / "file" / "corrections.csv")
+    tool.widgets["save_corrections"].click()
+    assert "Error" in tool.widgets["corrections_saved"].value
 
 
 @pytest.mark.parametrize("save_plots", [True, False])

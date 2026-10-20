@@ -21,13 +21,15 @@ The tests are in `tests/`, one file per part of the tool:
 |---|---|
 | `test_parameters.py` | Parameters: defaults, the checks of each value and their messages, unknown names, the checks between parameters, the reference channel |
 | `test_inputs.py` | The shock list and the event list: its layouts and examples, the default windows, the order of the times, the data period, the date ranges, invalid files and former Onset Time lists |
+| `test_background.py` | The event times: where the background window and end time come from, setting and resetting them, invalid times, the points of the window and their warnings, the effect on the onsets, and `save_events()` |
 | `test_data.py` | The channel layout, the grouping of the channels, the download with its cache and retries, the resampling |
 | `test_onsets.py` | Onset detection, data quality, and the choice of the onset: resolution, viewing, reference window, copied onsets, onsets at the end of the background, shocks |
 | `test_spikes.py` | Spike detection with the threshold of each resolution, and spike removal |
 | `test_peaks_fluence.py` | Peak flux and fluence: the functions, the choice of the viewing and resolution, shocks |
+| `test_corrections.py` | Onset corrections: setting another onset or no onset, the reference channel, running the steps again for one event as for all the events, invalid corrections, saving them and applying the file of corrections |
 | `test_results.py` | A whole synthetic run: the result tables and the files of `save_results()` and `plot_events()` |
-| `test_views.py` | The plots: file names, saving, and the plot of an event compared with baseline images, with 1 to 6 channel groups and small, medium and large panels (the title, legend and panels, and the texts in the corners of the panels), and the entries of the legend |
-| `test_notebook.py` | The notebook interface without a browser: the fields of the form and their errors, the viewings and resolutions, the summaries of the input files, the channel group editor, and the steps with the event viewer |
+| `test_views.py` | The plots: file names, saving, and the plot of an event compared with baseline images, with 1 to 6 channel groups and small, medium and large panels (the title, legend and panels, and the texts in the corners of the panels), the entries and groups of the legend, the order of the drawn elements, the titles of corrected panels, and the plot of the event times |
+| `test_notebook.py` | The notebook interface without a browser: the fields of the form and their errors, the viewings and resolutions, the summaries of the input files, the channel group editor, and the steps: the event times with their sliders, the event viewer with the onset corrections, and saving the event list and the corrections |
 | `test_end_to_end.py` | The example event list, from the download of the data to the results and the plot (network) |
 
 All the tests except the end-to-end test run offline, with synthetic data built so that the expected results are known (`tests/helpers.py`): a constant background with a linear rise and decay, and a fake `epd_load` that returns data shaped like the real one. The end-to-end test downloads data and is marked `network`; it runs after the offline tests.

@@ -4,6 +4,8 @@
 - [A minimal script](#a-minimal-script)
 - [Parameters](#parameters)
 - [The analysis](#the-analysis)
+- [Event times](#event-times)
+- [Onset corrections](#onset-corrections)
 - [Results](#results)
 - [Plots](#plots)
 - [Notebook interface](#notebook-interface)
@@ -75,13 +77,50 @@ params.check()
 | `plot_events()` | Writes one plot per event to `dir_plots` |
 | `save_results()` | Writes `results.csv`, the table of `results_table()`, to `dir_outputs` |
 
+`select_onsets()`, `run_spikes()`, `calculate_peaks()`, `select_peaks()`, `calculate_fluences()` and `select_fluences()` take an optional event number, to run for that event only; [onset corrections](#onset-corrections) use it.
+
+## Event times
+
+After `run_data()`, and before the onsets, the background window and the end time of an event can be changed within its loaded data (the [Event times](user_guide.md#event-times-step) step of the notebook):
+
+```python
+tool.set_bg_window(20, "2021-11-01 00:00", "2021-11-01 01:30")   # BG Start, BG End
+tool.set_end_time(20, "2021-11-02 12:00")
+tool.bg_window_points(20)      # {resolution: the fewest points with data in the window among the series of the event}
+tool.bg_window_warnings(20)    # a warning for each resolution with fewer than 3 points
+tool.reset_bg_window(20)       # the window of the event list, or the default one
+tool.reset_end_time(20)
+tool.save_events("outputs/events.csv")
+```
+
+- The times must stay in the order Start Time ≤ BG Start < BG End < End Time, and the end time within the loaded data (`Plot End`); otherwise a `ValueError` says why, and the event is not changed.
+- The columns `BG Window Source` and `End Time Source` of `events` (and of `results.csv`) say where the times come from: `event list`, `default` or `set`.
+- `save_events(path)` writes the event list with the times of all the events, which can be given as `file_events`.
+- Run `run_onsets()` and the next steps again after a change.
+
+## Onset corrections
+
+After `run_onsets()`, the onset of a channel group can be set to one of the onsets detected in its series, or to no onset (the [Onset corrections](user_guide.md#onset-corrections) of the notebook). The steps that have run are run again for that event only:
+
+```python
+tool.set_onset(20, "electrons", "HET", "1 MeV", 2, "south")     # resolution (minutes or timedelta), viewing
+tool.set_onset(20, "protons", "HET", "8 MeV")                   # no onset
+tool.reset_onset(20, "protons", "HET", "8 MeV")                 # the automatic choice
+tool.corrections        # {(event, particle, sensor, group): (resolution, viewing), or None for no onset}
+tool.save_corrections("outputs/corrections.csv")
+```
+
+- A series without an onset, or a channel group or series that does not exist, raises a `ValueError`.
+- A corrected reference channel changes the onsets chosen for the other channel groups of its event, except the corrected ones. The corrected rows have `Onset Corrected` set in `df_results`.
+- The corrections stay when the steps run again. `save_corrections(path)` writes them, and the parameter `file_corrections` applies a saved file in a later run (read by `run_inputs()`, applied by `select_onsets()`); see the [user guide](user_guide.md#onset-corrections) for its columns and messages. `inputs.read_corrections(path)` reads it.
+
 ## Results
 
 After the steps, the results are attributes of the `SEPPACT` object:
 
 | Attribute | Content |
 |---|---|
-| `events` | The events: `Start Time`, `BG Start`, `BG End`, `End Time` and `Reference Time` (if given), with the default windows filled in, and the period of data (`Plot Start`, `Plot End`) |
+| `events` | The events: `Start Time`, `BG Start`, `BG End`, `End Time` and `Reference Time` (if given), with the default windows filled in, the period of data (`Plot Start`, `Plot End`), and where the background window and end time come from (`BG Window Source`, `End Time Source`) |
 | `shocktimes` | The times of the shocks (`pandas.Series`) |
 | `dfs_flux` | The flux of the channel groups: `dfs_flux[particle][sensor][resolution]` is a DataFrame indexed by event number and time, with the columns (viewing, group) |
 | `df_series` | The results of every series: one row per event, particle, sensor, channel group (`Energy Label`), resolution and viewing (see below) |
@@ -116,7 +155,7 @@ protons = results[results["Particle"] == "protons"]
 
 ## Plots
 
-`spearhead.sep_pact.views.plot_event(tool, event_no, filename=None)` returns the plot of one event as a matplotlib `Figure`, and saves it if a file name is given. `event_plot_filename(tool, event_no)` gives the file name that `plot_events()` uses in `dir_plots`.
+`spearhead.sep_pact.views.plot_event(tool, event_no, filename=None)` returns the plot of one event as a matplotlib `Figure`, and saves it if a file name is given. `event_plot_filename(tool, event_no)` gives the file name that `plot_events()` uses in `dir_plots`. `plot_background(tool, event_no, filename=None)` returns the plot of the event times step: the flux of all the channel groups per particle and sensor, with the background window and the start and end times.
 
 ```python
 from spearhead.sep_pact.views import plot_event
@@ -136,21 +175,23 @@ from spearhead.sep_pact.notebook import SEPPACT_notebook
 tool = SEPPACT_notebook(SEPPACT_parameters(file_events="my_events.csv"))
 tool.parameters_form()
 tool.run_data()
+tool.event_times()
 tool.run_analysis()
+tool.event_viewer()
 tool.df_results           # the same as tool.seppact.df_results
 ```
 
 - `tool.parameters` is the `SEPPACT_parameters` of the form, and `tool.errors` the values of the form that are not accepted.
 - `run_data()` creates `tool.seppact`, a `SEPPACT` with a copy of the parameters, so that a later change in the form does not change an analysis that has run.
-- `tool.widgets` holds the widgets of the form by parameter name, and those of the event viewer.
+- `tool.widgets` holds the widgets of the form by parameter name, and those of the event times step and the event viewer.
 
 ## Modules
 
 | Module | Content |
 |---|---|
 | `conf` | `SEPPACT_parameters`, and the default channel groups and spike thresholds |
-| `inputs` | `read_shocks(path)`, `read_events(path, params)` and `make_events(params)` (the event list, or the date ranges), and `EVENT_LIST_LAYOUTS`, the accepted columns of the event list |
+| `inputs` | `read_shocks(path)`, `read_events(path, params)` and `make_events(params)` (the event list, or the date ranges), `EVENT_LIST_LAYOUTS`, the accepted columns of the event list, and `read_corrections(path)` with `CORRECTION_COLUMNS`, the file of onset corrections |
 | `data` | `load()`, which returns the EPD data of each particle as `ParticleData` (the flux with the channel numbers as columns, and the energies of the channels), `load_energies()`, `group_channels_de()`, `flux_cache_file()`, `download_data()` and `resample_flux()`: the EPD data, the flux of the channel groups and its cache |
 | `analysis` | `SEPPACT`, and the functions of the steps: `onset_detection_sigma()` (which returns the onset, the background start and end, and the background level and threshold), `quality_analysis()`, `choose_onset()`, `choose_peak()`, `choose_fluence()`, `detect_spikes()`, `remove_spikes()`, `get_peak_flux()`, `fluence_interval()`, `peak_search_end()` and `shocks_in_range()` |
-| `views` | `plot_event()` and `event_plot_filename()` |
+| `views` | `plot_event()`, `plot_background()` and `event_plot_filename()` |
 | `notebook` | `SEPPACT_notebook`, the interface of the notebook (needs the `notebook` extra) |

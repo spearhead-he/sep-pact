@@ -14,12 +14,14 @@
   - [Shock list](#shock-list)
 - [Steps of the notebook](#steps-of-the-notebook)
   - [Data](#data-step)
+  - [Event times](#event-times-step)
   - [Analysis](#analysis-step)
   - [Onset](#onset-step)
   - [Spikes](#spikes-step)
   - [Peak flux](#peak-flux-step)
   - [Fluence](#fluence-step)
   - [Events](#events-step)
+  - [Onset corrections](#onset-corrections)
 - [Results](#results)
   - [results.csv](#resultscsv)
   - [Units](#units)
@@ -93,6 +95,7 @@ The default groups are:
 | Largest distance from the reference onset (hours) | `reference_onset_window` | 2.5 h | Onsets further than this from the onset of the reference channel are ignored |
 | Largest ratio of transitions to zero or missing values | `quality_tolerance` | 0.1 | Allowed ratio of transitions from valid to zero or NaN values after the onset, to the number of points |
 | Tolerance grows with the resolution | `quality_adjustable` | off | If on, the tolerance is multiplied by 1 + resolution / 60 min |
+| Corrections file | `file_corrections` | none | Path of the [onset corrections](#onset-corrections) saved in the Events step, applied after the automatic choice of the onsets. Below the path, the number of corrections, or why the file cannot be read. Leave it blank for none |
 
 ### Peak and fluence tab
 
@@ -145,6 +148,8 @@ The times are in UTC, as `YYYY-MM-DD HH:MM:SS` or `YYYY-MM-DD HH:MM` (ISO 8601).
 
 Without an event list, the events are the date ranges of the form (`date_ranges`), with the default background window.
 
+The [Event times](#event-times-step) step can save the event list with the background windows and end times set in it, in the layout with the background window; give it as the event list of a later run to use the same times.
+
 Event lists with an `Onset Time`, as in earlier versions, are not accepted. To convert one, with the windows it had (empty cells were 2 hours and 5 minutes before the onset, and 48 hours after it):
 
 ```python
@@ -176,11 +181,12 @@ The shock list, by default `inputs/shocks.dat`, is the list of interplanetary sh
 1. **Setup:** imports the package and creates the interface, `tool = SEPPACT_notebook()`.
 2. **Parameters:** `tool.parameters_form()`; see [Parameters](#parameters).
 3. **Data:** `tool.run_data()` reads the event list and the shock list, fills in the missing windows, and downloads the data (see [Data](#data-step)). It shows the event list with its windows.
-4. **Analysis:** `tool.run_analysis()` runs the onset, spikes, peak flux and fluence steps (see [Analysis](#analysis-step)).
-5. **Events:** `tool.event_viewer()` shows the plot and the results of each event (see [Events](#events-step)).
-6. **Results:** `tool.save_results()` writes `results.csv` and, if "Save the plots of the events" is on, the plots (see [Results](#results)).
+4. **Event times:** `tool.event_times()` shows the background window and the end time of each event, which can be changed (see [Event times](#event-times-step)).
+5. **Analysis:** `tool.run_analysis()` runs the onset, spikes, peak flux and fluence steps (see [Analysis](#analysis-step)).
+6. **Events:** `tool.event_viewer()` shows the plot and the results of each event, and the onset of each channel group can be corrected (see [Events](#events-step) and [Onset corrections](#onset-corrections)).
+7. **Results:** `tool.save_results()` writes `results.csv` and, if "Save the plots of the events" is on, the plots (see [Results](#results)).
 
-The analysis uses the parameters of the form when the data step runs; after a change in the form, run the steps again from the data step. The results stay available as attributes of `tool`: `tool.df_series` has the results of every resolution and viewing, and `tool.df_results` the chosen ones; see the [library guide](library.md#results).
+The analysis uses the parameters of the form when the data step runs; after a change in the form, run the steps again from the data step. After a change of the event times, run the analysis step again. The results stay available as attributes of `tool`: `tool.df_series` has the results of every resolution and viewing, and `tool.df_results` the chosen ones; see the [library guide](library.md#results).
 
 <a id="data-step"></a>
 ### Data
@@ -188,6 +194,19 @@ The analysis uses the parameters of the form when the data step runs; after a ch
 The data of each event, viewing and sensor are downloaded from the Solar Orbiter Archive with [solo-epd-loader](https://github.com/jgieseler/solo-epd-loader) into `dir_data`, for the period from the background start to the end time, extended to `min_plot_window`. Files already in `dir_data` are not downloaded again. The channels of each group are combined, weighted by their energy widths.
 
 The result is cached in `dir_saves`, in a file named after the level, the viewings, the channel groups and the event windows. Running the notebook again with the same settings loads the cache; changing any of them creates a new cache file.
+
+<a id="event-times-step"></a>
+### Event times
+
+Shows the background window and the end time of the event chosen in the dropdown, with a plot of the flux of all its channel groups (one panel per particle and sensor, at the finest resolution, in the first viewing), the background window shaded and the start and end times dotted.
+
+- **Background:** a range slider over the data points from the Start Time to the End Time; move its ends to set the window (`BG Start`, `BG End`).
+- **End time:** a slider over the data points from after the background window to the end of the loaded data; move it to set the `End Time`. To extend an event beyond its data, change the event list and run the data step again. The slider starts at the closest data point at or before the end time, which is not changed until the slider is moved.
+- **Reset:** gives back the background window and the end time of the event list, or the default ones.
+- **Status:** the window and the end time, where they come from (`event list`, `default` or `set`), and the number of points with data in the window at each resolution (the fewest among the series of the event). A window with fewer than 3 points at a resolution is shown with a warning in red: its standard deviation, and so the threshold, is not reliable, and with 1 point there is no onset at that resolution. The checkbox limits the list to the events with warnings.
+- **Save:** writes the event list with the times of all the events (by default `outputs/events.csv`), which can be given as the [event list](#event-list) of a later run.
+
+A changed end time also changes where the onsets are searched, the data quality check, the window of the spikes and peak, and the fluence interval. Run the analysis step after the changes; the status line reminds of it when the analysis has already run.
 
 <a id="analysis-step"></a>
 ### Analysis
@@ -235,7 +254,18 @@ The chosen fluence is the largest of the resolutions whose interval does not sta
 <a id="events-step"></a>
 ### Events
 
-The event viewer shows the [plot](#plots) of the event chosen in the dropdown, and its rows of [results.csv](#resultscsv). The Previous and Next buttons go through the events. The checkbox limits the list to the events with a channel group whose onset is copied from the reference channel or at the end of the background window, to check them.
+The event viewer shows the [plot](#plots) of the event chosen in the dropdown, and its rows of [results.csv](#resultscsv). The Previous and Next buttons go through the events. The checkbox limits the list to the events with a channel group whose onset is copied from the reference channel or at the end of the background window, to check them. A note below the onset choice explains the colours of the panel titles.
+
+### Onset corrections
+
+Below the event, the onset of each channel group can be set by hand:
+- **Channel group:** the channel groups of the event.
+- **Onset:** "No onset", or one of the onsets detected in the series of the group, labelled with their time, resolution and viewing, and "(not usable)" or "(copied)" when they apply. It shows the chosen onset.
+- **Reset to automatic:** gives back the automatically chosen onset.
+
+After a change, the spikes, peak flux and fluence of the event are calculated again, and its plot and results are redrawn; a note with an hourglass is shown meanwhile. A corrected panel has "(corrected)" at the end of its title, and the column `Onset Corrected` of `results.csv` is `True`. A corrected reference channel changes the onsets chosen for the other channel groups of its event, except the corrected ones.
+
+The corrections stay when the analysis step runs again, e.g. after a change of the event times. **Save**, below the results of the event, writes them (by default `outputs/corrections.csv`): one row per corrected channel group, with `Event No`, `Particle`, `Sensor`, `Energy Label`, `Onset Resolution` (minutes), `Onset Viewing` and `Onset Time`, the last three empty for no onset. Give the file as the corrections file (`file_corrections`, in the [Onsets tab](#onsets-tab)) to apply them in a later run: a correction whose series has no onset any more, e.g. after a change of the parameters, is left out with a message, and a note is given when the onset of its series has changed.
 
 ## Results
 
@@ -260,6 +290,8 @@ Event No,Particle,Sensor,Energy Label,Low Energy,High Energy,Onset Time,Onset Re
 | `Onset Resolution`, `Onset Viewing` | Resolution and viewing of the onset |
 | `Onset Copied` | `True` if the onset is the one of the reference channel (see [Onset](#onset-step)) |
 | `Onset at BG End` | `True` if the onset is at the end of the background window: the rise may have started earlier |
+| `Onset Corrected` | `True` if the onset was set by hand (see [Onset corrections](#onset-corrections)) |
+| `BG Window Source`, `End Time Source` | Where the background window and the end time of the event come from: `event list`, `default`, or `set` in the [Event times](#event-times-step) step |
 | `Peak Flux` | Chosen peak flux |
 | `Peak Flux Time` | Time of the peak flux |
 | `Peak Flux Resolution`, `Peak Flux Viewing` | Resolution and viewing of the peak flux |
@@ -289,24 +321,30 @@ wide = results.set_index(["Event No", "Particle", "Sensor", "Energy Label"]).uns
 
 ## Plots
 
-Each plot, `event_<number>.png`, has the title of the event, the legend, and one panel per channel group, `panel_height` inches high. The legend lists only the elements drawn in at least one panel, e.g. Shock Time only when a shock is in the plot. The title of a panel, in its top-right corner, gives the group, the particle and sensor, and the viewing and resolution of the onset. Each panel shows:
+Each plot, `event_<number>.png`, has the title of the event, the legend, and one panel per channel group, `panel_height` inches high. The legend lists only the elements drawn in at least one panel, e.g. Shock Time only when a shock is in the plot, grouped by quantity: the onset, the peak flux, the fluence, and the event. The title of a panel, in its top-right corner, gives the group, the particle and sensor, and the viewing and resolution of the onset. Each panel shows:
 
-| Element | Meaning |
-|---|---|
-| Orange line | Flux at the resolution and viewing of the onset |
-| Orange dashed line | Flux at the resolution and viewing of the peak flux, if they are different |
-| Brown dotted line | Flux at the resolution of the fluence, if it is different from the one of the peak flux |
-| Green area | Background window |
-| Blue dashed line | Background level |
-| Red dashed line | Onset threshold |
-| Green line and label | Onset time; the label notes "from 1 MeV electrons" for an onset copied from the reference channel, and "at BG end" for an onset at the end of the background window |
-| Grey area | Event range, from the onset to the end (or the first shock after the onset) |
-| Red point and label | Peak flux, with its time, viewing and resolution |
-| Purple dashed lines | `fluence_peak_fraction` of the peak flux, and the fluence threshold |
-| Brown area and label | Fluence interval, with the fluence, its viewing and resolution |
-| Purple dotted lines | Interplanetary shocks |
-| Text in the bottom-right corner | Quality of the onset data: the ratio of transitions to zero or NaN values, and the numbers of zero and valid values |
+| Element | Legend | Meaning |
+|---|---|---|
+| Orange line | Data (Onset) | Flux at the resolution and viewing of the onset |
+| Light orange line | Data (No Onset) | Flux in `fallback_viewing` at the coarsest resolution, of a channel group without an onset |
+| Green area | BG sample | Background window |
+| Blue dashed line | BG Level | Background level |
+| Red dashed line | nσ Threshold | Onset threshold |
+| Green dashed line and label | Onset Time | Onset time; the label notes "from 1 MeV electrons" for an onset copied from the reference channel, and "at BG end" for an onset at the end of the background window |
+| Teal dashed line | Data (Peak Flux) | Flux at the resolution and viewing of the peak flux, if they are different from those of the onset |
+| Red point and label | Peak Flux | Peak flux, with its time, viewing and resolution |
+| Purple dashed line | 0.5 × Peak Flux | `fluence_peak_fraction` of the peak flux |
+| Brown dash-dotted line | Data (Fluence) | Flux at the resolution of the fluence, if it is different from the one of the peak flux |
+| Brown area and label | Fluence | Fluence interval, with the fluence, its viewing and resolution |
+| Purple dotted line | Fluence Threshold | The fluence threshold, at the resolution of the fluence |
+| Grey area | Event Range | Event range, from the onset to the end (or the first shock after the onset) |
+| Pink lines and labels | Shock Time | Interplanetary shocks, with their times |
+| Text in the bottom-right corner | | Quality of the onset data: the ratio of transitions to zero or NaN values, and the numbers of zero and valid values |
 
-A red title marks a channel group:
-- without an onset: the panel then shows the flux in `fallback_viewing` at the coarsest resolution, with the background window and the event range;
-- with an onset at the end of the background window.
+The colour of a panel title marks a channel group:
+- red, without an onset: the panel then shows the flux in `fallback_viewing` at the coarsest resolution, with the background window and the event range;
+- orange, with its onset at the end of the background window, where the event may have started earlier.
+
+"(corrected)" at the end of a panel title marks an onset set by hand (see [Onset corrections](#onset-corrections)).
+
+The shaded areas are drawn behind the flux, and the flux of the onset over those of the peak flux and the fluence. The horizontal lines (levels and thresholds) are drawn over the flux, the vertical lines (onset and shocks) over them, and the labels on top.
