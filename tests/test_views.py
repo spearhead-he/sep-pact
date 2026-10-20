@@ -6,7 +6,7 @@ import pytest
 from matplotlib.figure import Figure
 from matplotlib.text import Text
 
-from spearhead.sep_pact.views import CORNER_PADDING, event_plot_filename, plot_event, plot_height
+from spearhead.sep_pact.views import CORNER_PADDING, event_plot_filename, plot_background, plot_event, plot_height
 from tests.helpers import T0, VIEWINGS, FakeEPD, bg_end_event, image_compare, synthetic_tool
 
 
@@ -172,3 +172,22 @@ def test_plot_event_panel_height(tmp_path, monkeypatch, panel_height):
     assert fig._suptitle.get_window_extent().y0 >= legend.y1 >= legend.y0 >= fig.axes[0].get_window_extent().y1
     assert_corner_texts(fig)
     return fig
+
+
+def test_plot_background_returns_a_figure_and_saves_it(tmp_path, monkeypatch):
+    tool = synthetic_tool(tmp_path, monkeypatch)
+    filename = str(tmp_path / "background.png")
+    fig = plot_background(tool, 1, filename=filename)
+    assert os.path.getsize(filename) > 0
+    # one panel per particle and sensor, with all its channel groups and the window
+    assert [panel_title(ax).get_text() for ax in fig.axes] == ["electrons/HET (sun viewing, 2 mins resolution)",
+                                                               "protons/HET (sun viewing, 2 mins resolution)"]
+    assert [len(ax.lines) for ax in fig.axes] == [2 + 2, 3 + 2]
+    assert fig.get_suptitle() == "Event 1: background 2021-01-01 10:00 to 2021-01-01 11:55 (default)"
+
+
+@image_compare
+def test_plot_background(tmp_path, monkeypatch):
+    tool = synthetic_tool(tmp_path, monkeypatch, events={1: bg_end_event(T0 - timedelta(minutes=5))})
+    tool.set_bg_window(1, T0 - timedelta(hours=1), T0 - timedelta(minutes=10))
+    return plot_background(tool, 1)

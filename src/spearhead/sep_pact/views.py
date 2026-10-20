@@ -258,3 +258,42 @@ def plot_event(tool, event_no: int, filename: str | None = None) -> Figure:
     if filename is not None:
         fig.savefig(filename)
     return fig
+
+
+def plot_background(tool, event_no: int, filename: str | None = None) -> Figure:
+    """Returns the plot of the background window of an event, and saves it to filename if one is given: one panel per
+    particle and sensor with the flux of all its channel groups, at the finest resolution in the first viewing, and
+    the window shaded
+
+    tool is a SEPPACT after run_data().
+    """
+    p = tool.params
+    resample_freq, viewing = p.resample_freqs[0], p.viewings[0]
+    panels = [(particle, sensor) for particle in reference_iter(tool.particles, tool.reference_channel)
+              for sensor in reference_iter(tool.sensors[particle], tool.reference_channel)]
+    fig, axs = plt.subplots(figsize=(PLOT_WIDTH, plot_height(p.panel_height, len(panels))), nrows=len(panels), ncols=1,
+                            sharex=True, squeeze=False, layout="constrained")
+    axs = axs[:, 0]
+    event = tool.events.loc[event_no]
+    for ax, (particle, sensor) in zip(axs, panels):
+        flux = tool.dfs_flux[particle][sensor][resample_freq].loc[event_no]
+        for mevlbl in reference_iter(p.group_options[particle].keys(), tool.reference_channel):
+            ax.plot(flux.index, flux[(viewing, mevlbl)].values, label=mevlbl)
+        ax.set_yscale("log")
+        ax.grid()
+        ax.axvspan(event["BG Start"], event["BG End"], color="green", alpha=0.3, label="background window")
+        for column in ("Start Time", "End Time"):
+            ax.axvline(event[column], color="black", linestyle=":")
+        ax.set_xlim(flux.index[0], flux.index[-1])
+        _panel_title(ax, f"{particle}/{sensor} ({viewing} viewing, {resample_freq.total_seconds() / 60:g} mins "
+                     "resolution)", "black")
+        # right of the panel, away from the window at the start of the event
+        ax.legend(loc="upper left", bbox_to_anchor=(1.005, 1), fontsize="small")
+    fig.suptitle(f"Event {event_no}: background {event['BG Start']:%Y-%m-%d %H:%M} to {event['BG End']:%Y-%m-%d %H:%M} "
+                 f"({event['BG Window']})")
+    fig.supylabel(r"Flux (particle/(cm$^2$ s sr MeV))")
+    fig.supxlabel("Time (UTC); dotted lines: start and end time of the event")
+    axs[-1].xaxis.set_major_formatter(mdates.ConciseDateFormatter(mdates.AutoDateLocator()))
+    if filename is not None:
+        fig.savefig(filename)
+    return fig

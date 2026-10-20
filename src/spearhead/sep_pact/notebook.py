@@ -18,7 +18,7 @@ from .analysis import SEPPACT
 from .conf import SEPPACT_parameters
 from .data import load_energies
 from .inputs import EVENT_LIST_LAYOUTS, event_list_layout, make_events, read_events, read_shocks
-from .views import PLOT_WIDTH, plot_event, plot_height
+from .views import PLOT_WIDTH, plot_background, plot_event, plot_height
 
 # the resolutions that can be chosen, in minutes
 RESOLUTION_CHOICES = (1, 2, 5, 10, 15, 30, 60)
@@ -73,8 +73,8 @@ def _section(title: str, *children) -> widgets.VBox:
 
 
 class SEPPACT_notebook:
-    """Notebook interface of the SEP-PACT analysis: parameters_form(), then the steps run_data(), run_analysis(),
-    event_viewer() and save_results()
+    """Notebook interface of the SEP-PACT analysis: parameters_form(), then the steps run_data(),
+    background_selection(), run_analysis(), event_viewer() and save_results()
 
     The parameters are those of the form (parameters, a SEPPACT_parameters); the analysis (seppact, a SEPPACT) is
     created by run_data() with a copy of them, and keeps its results as attributes.
@@ -559,10 +559,136 @@ class SEPPACT_notebook:
             return
         display(self.seppact.events)
 
-    def run_analysis(self) -> None:
-        """Runs the onsets, spikes, peak flux and fluence steps, and summarises the chosen onsets"""
+    def _has_data(self) -> bool:
+        """Whether the data step has run; shows an error if not"""
         if self.seppact is None or self.seppact.dfs_flux is None:
             display(widgets.HTML(_error_text("There are no data: run the data step first.")))
+            return False
+        return True
+
+    def _event_choice(self, subset: list, subset_description: str) -> tuple[widgets.Checkbox, widgets.Dropdown]:
+        """The event dropdown, with the event numbers and start times, and the checkbox that limits it to the subset
+        of events; the first event is chosen, also without a click"""
+        events = self.seppact.events
+        wgt_subset = widgets.Checkbox(value=False, indent=False, layout=widgets.Layout(width="max-content"),
+                                      description=f"Only the {_count(len(subset), 'event')} {subset_description}")
+        wgt_event = widgets.Dropdown(description="Event:", style=self._style)
+
+        def set_options(_=None):
+            numbers = subset if wgt_subset.value else list(events.index)
+            wgt_event.options = [(f"{n} ({events.loc[n, 'Start Time']:%Y-%m-%d %H:%M})", n) for n in numbers]
+            wgt_event.value = numbers[0] if numbers else None
+
+        set_options()
+        wgt_subset.observe(set_options, names="value")
+        return wgt_subset, wgt_event
+
+    def _bg_status(self, event_no: int) -> str:
+        """The background window of an event, where it comes from, its points at each resolution and its warnings"""
+        tool = self.seppact
+        event = tool.events.loc[event_no]
+        points = ", ".join(f"{n} at {freq.total_seconds() / 60:g} min" for freq, n in tool.bg_window_points(event_no).items())
+        lines = [html.escape(f"Background {event['BG Start']:%Y-%m-%d %H:%M} to {event['BG End']:%Y-%m-%d %H:%M} "
+                             f"({event['BG Window']}); points: {points}.")]
+        lines += [f'<span style="color: red">{html.escape(warning)}</span>' for warning in tool.bg_window_warnings(event_no)]
+        if tool.df_series is not None:
+            lines.append("<b>Run the analysis step again to use the changed windows.</b>")
+        return "<br>".join(lines)
+
+    def _bg_slider_points(self, event_no: int) -> tuple[pd.DatetimeIndex, tuple[int, int]]:
+        """The times of the background slider of an event, its data points from the start to the end time at the
+        finest resolution, and the indices of the points of its window (the closest ones inside it)"""
+        tool = self.seppact
+        event = tool.events.loc[event_no]
+        particle = next(iter(tool.particles))
+        sensor = next(iter(tool.sensors[particle]))
+        times = tool.dfs_flux[particle][sensor][tool.params.resample_freqs[0]].loc[event_no].index
+        times = times[(times >= event["Start Time"]) & (times < event["End Time"])]
+        i_start = min(int(times.searchsorted(event["BG Start"])), len(times) - 1)
+        i_end = max(int(times.searchsorted(event["BG End"], side="right")) - 1, i_start)
+        return times, (i_start, i_end)
+
+    def _save_events_widget(self) -> widgets.VBox:
+        """The path of the event list with the windows and its Save button"""
+        wgt_path = widgets.Text(value=os.path.join(self.seppact.params.dir_outputs, "events.csv"),
+                                description="Event list:", style=self._style, layout=widgets.Layout(width=TEXT_WIDTH))
+        btn_save = widgets.Button(description="Save", tooltip="Write the events with their windows as an event list")
+        wgt_saved = widgets.HTML()
+
+        def save(_):
+            try:
+                if folder := os.path.dirname(wgt_path.value):
+                    os.makedirs(folder, exist_ok=True)
+                self.seppact.save_events(wgt_path.value)
+            except OSError as e:
+                wgt_saved.value = _error_text(str(e))
+                return
+            wgt_saved.value = html.escape(f"Saved the event list to {wgt_path.value}; give it as the event list to use "
+                                          "these windows again.")
+
+        btn_save.on_click(save)
+        self.widgets.update({"events_path": wgt_path, "save_events": btn_save, "events_saved": wgt_saved})
+        return widgets.VBox([widgets.HBox([wgt_path, btn_save]), wgt_saved])
+
+    def background_selection(self) -> None:
+        """The background window of the event chosen in the dropdown, set with the slider, and its plot
+
+        The slider goes over the data points from the start to the end time of the event, at the finest resolution.
+        """
+        if not self._has_data():
+            return
+        tool = self.seppact
+        wgt_warned, wgt_event = self._event_choice([n for n in tool.events.index if tool.bg_window_warnings(n)],
+                                                   "with background warnings")
+        wgt_bg = widgets.SelectionRangeSlider(options=[("", None)], description="Background:", continuous_update=False,
+                                              style=self._style, layout=widgets.Layout(width="95%"))
+        btn_reset = widgets.Button(description="Reset", tooltip="The background window of the event list, or the default one")
+        wgt_status = widgets.HTML()
+        wgt_plot = widgets.Image(format="png", layout=widgets.Layout(max_width="100%", height="auto"))
+        # the slider is not applied to the event while it is set to the event's window
+        updating = {"slider": False}
+
+        def redraw():
+            wgt_status.value = self._bg_status(wgt_event.value)
+            wgt_plot.value = _figure_png(plot_background(tool, wgt_event.value))
+
+        def show_event(_=None):
+            if wgt_event.value is None:
+                wgt_status.value, wgt_plot.value = "", b""
+                return
+            times, index = self._bg_slider_points(wgt_event.value)
+            updating["slider"] = True
+            wgt_bg.options = [(f"{t:%Y-%m-%d %H:%M}", t) for t in times]
+            wgt_bg.index = index
+            updating["slider"] = False
+            redraw()
+
+        def set_bg(change):
+            if updating["slider"]:
+                return
+            try:
+                tool.set_bg_window(wgt_event.value, *change["new"])
+            except ValueError as e:
+                wgt_status.value = _error_text(str(e))
+                return
+            redraw()
+
+        def reset_bg(_):
+            tool.reset_bg_window(wgt_event.value)
+            show_event()
+
+        self.widgets.update({"bg_warned_only": wgt_warned, "bg_event": wgt_event, "bg_window": wgt_bg,
+                             "bg_reset": btn_reset, "bg_status": wgt_status, "bg_plot": wgt_plot})
+        wgt_event.observe(show_event, names="value")
+        wgt_bg.observe(set_bg, names="value")
+        btn_reset.on_click(reset_bg)
+        show_event()
+        display(widgets.VBox([wgt_warned, widgets.HBox([wgt_event, btn_reset]), wgt_bg, wgt_status, wgt_plot,
+                              self._save_events_widget()]))
+
+    def run_analysis(self) -> None:
+        """Runs the onsets, spikes, peak flux and fluence steps, and summarises the chosen onsets"""
+        if not self._has_data():
             return
         steps = [("Onsets", self.seppact.run_onsets), ("Spikes", self.seppact.run_spikes),
                  ("Peak flux", self.seppact.run_peaks), ("Fluence", self.seppact.run_fluences)]
@@ -604,18 +730,10 @@ class SEPPACT_notebook:
         flagged = self._flagged_events()
         wgt_plot = widgets.Image(format="png", layout=widgets.Layout(max_width="100%", height="auto"))
         wgt_table = widgets.HTML()
-        wgt_flagged = widgets.Checkbox(value=False, indent=False, layout=widgets.Layout(width="max-content"),
-                                       description=f"Only the {_count(len(flagged), 'event')} with copied onsets or "
-                                                   "onsets at the end of the background window")
-        wgt_event = widgets.Dropdown(description="Event:", style=self._style)
+        wgt_flagged, wgt_event = self._event_choice(flagged, "with copied onsets or onsets at the end of the "
+                                                             "background window")
         btn_previous = widgets.Button(description="Previous", icon="arrow-left")
         btn_next = widgets.Button(description="Next", icon="arrow-right")
-
-        def set_options(_=None):
-            numbers = flagged if wgt_flagged.value else list(self.seppact.events.index)
-            wgt_event.options = [(f"{n} ({self.seppact.events.loc[n, 'Start Time']:%Y-%m-%d %H:%M})", n) for n in numbers]
-            # the first event is shown, also without a click
-            wgt_event.value = numbers[0] if numbers else None
 
         def move(step):
             values = [value for _, value in wgt_event.options]
@@ -632,8 +750,6 @@ class SEPPACT_notebook:
 
         self.widgets.update({"flagged_only": wgt_flagged, "event": wgt_event, "previous": btn_previous, "next": btn_next,
                              "plot": wgt_plot, "table": wgt_table})
-        set_options()
-        wgt_flagged.observe(set_options, names="value")
         wgt_event.observe(show, names="value")
         btn_previous.on_click(lambda _: move(-1))
         btn_next.on_click(lambda _: move(1))
