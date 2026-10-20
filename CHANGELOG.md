@@ -4,6 +4,8 @@ All notable changes of SEP-PACT. The format is based on [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-20
+
 ### Added
 
 - Form at the top of `sep-pact.ipynb` (`SEPPACT_notebook`), with all the parameters in tabs: the paths of the event list and the shock list with a summary of each, the event windows, the viewings, the resolutions with their spike thresholds, an editor of the energy channel groups with the energies of the channels, and the onset, data quality, peak flux, fluence and plot parameters. Values that are not accepted are shown in the form. See [Parameters](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#parameters).
@@ -31,6 +33,7 @@ All notable changes of SEP-PACT. The format is based on [Keep a Changelog](https
 
 - Plots of channel groups with an onset but without a peak flux or a fluence.
 - The cache folder `intermediate_states/` is created if it does not exist.
+- The notebook has no cells to skip or code to uncomment: the data step loads the flux from the cache, or reads the data files, by itself ([#2](https://github.com/spearhead-he/sep-pact/issues/2)).
 
 ### Upgrading from 0.1.0
 
@@ -45,5 +48,6 @@ All notable changes of SEP-PACT. The format is based on [Keep a Changelog](https
 
 First release: onset time, peak flux and fluence of electrons and protons in Solar Orbiter EPD/HET data, at several resolutions and viewings, with one plot per event.
 
-[Unreleased]: https://github.com/spearhead-he/sep-pact/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/spearhead-he/sep-pact/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/spearhead-he/sep-pact/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/spearhead-he/sep-pact/releases/tag/v0.1.0

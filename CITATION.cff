@@ -1,0 +1,23 @@
+# YAML 1.2
+# Metadata for citation of this software according to the CFF format (https://citation-file-format.github.io/)
+cff-version: 1.2.0
+message: If you use this software, please cite it using these metadata.
+title: 'SPEARHEAD SEP-PACT tool'
+doi: 10.5281/zenodo.20157436
+authors:
+- given-names: George
+  family-names: Vasalos
+  affiliation: National Observatory of Athens
+  orcid: https://orcid.org/0000-0003-0490-2717
+- given-names: Jan
+  family-names: Gieseler
+  affiliation: University of Turku
+  orcid: https://orcid.org/0000-0003-1848-7067
+- given-names: Athanasios
+  family-names: Papaioannou
+  affiliation: National Observatory of Athens
+  orcid: https://orcid.org/0000-0002-9479-8644
+version: 0.2.0
+date-released: 2026-10-20
+repository-code: https://github.com/spearhead-he/sep-pact
+license: BSD-3-Clause
