@@ -73,6 +73,8 @@ class SEPPACT_parameters:
     # without an event list (""), the events are date_ranges
     file_events: str = "inputs/events_example.csv"
     file_shocks: str = "inputs/shocks.dat"     # interplanetary shock list from ipshocks.helsinki.fi
+    # onset corrections saved by save_corrections(), applied to the chosen onsets; "" for none
+    file_corrections: str = ""
     dir_data: str = "data"                     # downloaded EPD files
     dir_saves: str = "intermediate_states"     # cached flux DataFrames
     dir_plots: str = "plots"                   # one figure per event

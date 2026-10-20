@@ -44,7 +44,7 @@ def test_results_table_has_a_row_per_event_and_channel_group(tool):
     table = tool.results_table()
     assert list(table.columns[:6]) == ["Event No", "Particle", "Sensor", "Energy Label", "Low Energy", "High Energy"]
     columns = RESULT_COLUMNS.copy()
-    columns.insert(columns.index("Onset at BG End") + 1, "BG Window")
+    columns.insert(columns.index("Onset Corrected") + 1, "BG Window")
     assert list(table.columns[6:]) == columns
     assert (table["BG Window"] == "default").all()
     assert list(zip(table["Event No"], table["Particle"], table["Sensor"], table["Energy Label"])) == \

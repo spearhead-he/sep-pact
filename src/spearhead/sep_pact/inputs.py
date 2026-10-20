@@ -127,3 +127,35 @@ def make_events(params: SEPPACT_parameters) -> pd.DataFrame:
     if params.file_events:
         return read_events(params.file_events, params)
     return complete_events(_date_range_events(params.date_ranges), params, "the date ranges")
+
+
+# the columns of the file of onset corrections
+CORRECTION_COLUMNS = ["Event No", "Particle", "Sensor", "Energy Label", "Onset Resolution", "Onset Viewing", "Onset Time"]
+
+
+def read_corrections(path: str) -> tuple[dict, dict]:
+    """Returns the onset corrections of the file written by SEPPACT.save_corrections(): {(event number, particle,
+    sensor, group label): (resolution, viewing), or None for no onset}, and {same key: onset time} of the corrections
+    with an onset
+
+    The file has the columns of CORRECTION_COLUMNS, with the resolution in minutes; a row without a resolution and
+    viewing means no onset.
+    """
+    df = pd.read_csv(path, skipinitialspace=True, dtype={"Particle": str, "Sensor": str, "Energy Label": str,
+                                                         "Onset Viewing": str})
+    if missing := [column for column in CORRECTION_COLUMNS if column not in df.columns]:
+        raise ValueError(f"The onset corrections {path} have no column {', '.join(missing)}. The columns are: "
+                         f"{', '.join(CORRECTION_COLUMNS)}.")
+    corrections, onset_times = {}, {}
+    for i, row in df.iterrows():
+        key = (int(row["Event No"]), row["Particle"], row["Sensor"], row["Energy Label"])
+        if pd.isna(row["Onset Resolution"]) and pd.isna(row["Onset Viewing"]):
+            corrections[key] = None
+        elif pd.isna(row["Onset Resolution"]) or pd.isna(row["Onset Viewing"]):
+            raise ValueError(f"Row {i + 2} of the onset corrections {path} has an onset resolution or viewing without "
+                             "the other; give both, or neither for no onset.")
+        else:
+            corrections[key] = (pd.Timedelta(minutes=float(row["Onset Resolution"])), row["Onset Viewing"])
+            if not pd.isna(row["Onset Time"]):
+                onset_times[key] = pd.Timestamp(row["Onset Time"])
+    return corrections, onset_times
