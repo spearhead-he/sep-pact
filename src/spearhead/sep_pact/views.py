@@ -345,7 +345,7 @@ def plot_background(tool, event_no: int, filename: str | None = None) -> Figure:
         # right of the panel, away from the window at the start of the event
         ax.legend(loc="upper left", bbox_to_anchor=(1.005, 1), fontsize="small")
     fig.suptitle(f"Event {event_no}: background {event['BG Start']:%Y-%m-%d %H:%M} to {event['BG End']:%Y-%m-%d %H:%M} "
-                 f"({event['BG Window']})")
+                 f"({event['BG Window Source']}), end {event['End Time']:%Y-%m-%d %H:%M} ({event['End Time Source']})")
     fig.supylabel(r"Flux (particle/(cm$^2$ s sr MeV))")
     fig.supxlabel("Time (UTC)")
     axs[-1].xaxis.set_major_formatter(mdates.ConciseDateFormatter(mdates.AutoDateLocator()))

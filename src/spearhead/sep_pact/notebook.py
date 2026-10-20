@@ -90,7 +90,7 @@ def _section(title: str, *children) -> widgets.VBox:
 
 class SEPPACT_notebook:
     """Notebook interface of the SEP-PACT analysis: parameters_form(), then the steps run_data(),
-    background_selection(), run_analysis(), event_viewer() and save_results()
+    event_times(), run_analysis(), event_viewer() and save_results()
 
     The parameters are those of the form (parameters, a SEPPACT_parameters); the analysis (seppact, a SEPPACT) is
     created by run_data() with a copy of them, and keeps its results as attributes.
@@ -614,36 +614,42 @@ class SEPPACT_notebook:
         wgt_subset.observe(set_options, names="value")
         return wgt_subset, wgt_event
 
-    def _bg_status(self, event_no: int) -> str:
-        """The background window of an event, where it comes from, its points at each resolution and its warnings"""
+    def _times_status(self, event_no: int) -> str:
+        """The background window and the end time of an event, where they come from, the points of the window at each
+        resolution and its warnings"""
         tool = self.seppact
         event = tool.events.loc[event_no]
         points = ", ".join(f"{n} at {freq.total_seconds() / 60:g} min" for freq, n in tool.bg_window_points(event_no).items())
         lines = [html.escape(f"Background {event['BG Start']:%Y-%m-%d %H:%M} to {event['BG End']:%Y-%m-%d %H:%M} "
-                             f"({event['BG Window']}); points: {points}.")]
+                             f"({event['BG Window Source']}); points: {points}. "
+                             f"End time {event['End Time']:%Y-%m-%d %H:%M} ({event['End Time Source']}).")]
         lines += [f'<span style="color: red">{html.escape(warning)}</span>' for warning in tool.bg_window_warnings(event_no)]
         if tool.df_series is not None:
-            lines.append("<b>Run the analysis step again to use the changed windows.</b>")
+            lines.append("<b>Run the analysis step again to use the changed times.</b>")
         return "<br>".join(lines)
 
-    def _bg_slider_points(self, event_no: int) -> tuple[pd.DatetimeIndex, tuple[int, int]]:
-        """The times of the background slider of an event, its data points from the start to the end time at the
-        finest resolution, and the indices of the points of its window (the closest ones inside it)"""
+    def _time_slider_points(self, event_no: int) -> tuple:
+        """The times and indices of the sliders of an event, its data points at the finest resolution: from the start to
+        the end time for the background window, with the points of the window (the closest ones inside it), and after
+        the background window to the end of the data for the end time, with the point of the end time (the closest one
+        before it)"""
         tool = self.seppact
         event = tool.events.loc[event_no]
         particle = next(iter(tool.particles))
         sensor = next(iter(tool.sensors[particle]))
         times = tool.dfs_flux[particle][sensor][tool.params.resample_freqs[0]].loc[event_no].index
-        times = times[(times >= event["Start Time"]) & (times < event["End Time"])]
-        i_start = min(int(times.searchsorted(event["BG Start"])), len(times) - 1)
-        i_end = max(int(times.searchsorted(event["BG End"], side="right")) - 1, i_start)
-        return times, (i_start, i_end)
+        bg_times = times[(times >= event["Start Time"]) & (times < event["End Time"])]
+        i_start = min(int(bg_times.searchsorted(event["BG Start"])), len(bg_times) - 1)
+        i_end = max(int(bg_times.searchsorted(event["BG End"], side="right")) - 1, i_start)
+        end_times = times[(times > event["BG End"]) & (times <= event["Plot End"])]
+        i_end_time = max(int(end_times.searchsorted(event["End Time"], side="right")) - 1, 0)
+        return bg_times, (i_start, i_end), end_times, i_end_time
 
     def _save_events_widget(self) -> widgets.VBox:
-        """The path of the event list with the windows and its Save button"""
+        """The path of the event list with the times of the events and its Save button"""
         wgt_path = widgets.Text(value=os.path.join(self.seppact.params.dir_outputs, "events.csv"),
                                 description="Event list:", style=self._style, layout=widgets.Layout(width=TEXT_WIDTH))
-        btn_save = widgets.Button(description="Save", tooltip="Write the events with their windows as an event list")
+        btn_save = widgets.Button(description="Save", tooltip="Write the events with their times as an event list")
         wgt_saved = widgets.HTML()
 
         def save(_):
@@ -655,16 +661,17 @@ class SEPPACT_notebook:
                 wgt_saved.value = _error_text(str(e))
                 return
             wgt_saved.value = html.escape(f"Saved the event list to {wgt_path.value}; give it as the event list to use "
-                                          "these windows again.")
+                                          "these times again.")
 
         btn_save.on_click(save)
         self.widgets.update({"events_path": wgt_path, "save_events": btn_save, "events_saved": wgt_saved})
         return widgets.VBox([widgets.HBox([wgt_path, btn_save]), wgt_saved])
 
-    def background_selection(self) -> None:
-        """The background window of the event chosen in the dropdown, set with the slider, and its plot
+    def event_times(self) -> None:
+        """The background window and the end time of the event chosen in the dropdown, set with the sliders, and its plot
 
-        The slider goes over the data points from the start to the end time of the event, at the finest resolution.
+        The sliders go over the data points of the event at the finest resolution: from the start to the end time for
+        the background window, and from the end of the background window to the end of the data for the end time.
         """
         if not self._has_data():
             return
@@ -673,48 +680,53 @@ class SEPPACT_notebook:
                                                    "with background warnings")
         wgt_bg = widgets.SelectionRangeSlider(options=[("", None)], description="Background:", continuous_update=False,
                                               style=self._style, layout=widgets.Layout(width="95%"))
-        btn_reset = widgets.Button(description="Reset", tooltip="The background window of the event list, or the default one")
+        # a slider needs an option before it gets the times of the event
+        wgt_end = widgets.SelectionSlider(options=[("", 0)], description="End time:", continuous_update=False,
+                                          style=self._style, layout=widgets.Layout(width="95%"))
+        btn_reset = widgets.Button(description="Reset", tooltip="The times of the event list, or the default ones")
         wgt_status = widgets.HTML()
         wgt_plot = widgets.Image(format="png", layout=widgets.Layout(max_width="100%", height="auto"))
-        # the slider is not applied to the event while it is set to the event's window
-        updating = {"slider": False}
-
-        def redraw():
-            wgt_status.value = self._bg_status(wgt_event.value)
-            wgt_plot.value = _figure_png(plot_background(tool, wgt_event.value))
+        # the sliders are not applied to the event while they are set to the event's times
+        updating = {"sliders": False}
 
         def show_event(_=None):
             if wgt_event.value is None:
                 wgt_status.value, wgt_plot.value = "", b""
                 return
-            times, index = self._bg_slider_points(wgt_event.value)
-            updating["slider"] = True
-            wgt_bg.options = [(f"{t:%Y-%m-%d %H:%M}", t) for t in times]
-            wgt_bg.index = index
-            updating["slider"] = False
-            redraw()
+            bg_times, bg_index, end_times, end_index = self._time_slider_points(wgt_event.value)
+            updating["sliders"] = True
+            wgt_bg.options = [(f"{t:%Y-%m-%d %H:%M}", t) for t in bg_times]
+            wgt_bg.index = bg_index
+            wgt_end.options = [(f"{t:%Y-%m-%d %H:%M}", t) for t in end_times]
+            wgt_end.index = end_index
+            updating["sliders"] = False
+            wgt_status.value = self._times_status(wgt_event.value)
+            wgt_plot.value = _figure_png(plot_background(tool, wgt_event.value))
 
-        def set_bg(change):
-            if updating["slider"]:
+        def set_time(set_event_time, *values):
+            if updating["sliders"]:
                 return
             try:
-                tool.set_bg_window(wgt_event.value, *change["new"])
+                set_event_time(wgt_event.value, *values)
             except ValueError as e:
                 wgt_status.value = _error_text(str(e))
                 return
-            redraw()
-
-        def reset_bg(_):
-            tool.reset_bg_window(wgt_event.value)
+            # the window limits the end time, and the end time the window
             show_event()
 
-        self.widgets.update({"bg_warned_only": wgt_warned, "bg_event": wgt_event, "bg_window": wgt_bg,
+        def reset(_):
+            tool.reset_bg_window(wgt_event.value)
+            tool.reset_end_time(wgt_event.value)
+            show_event()
+
+        self.widgets.update({"bg_warned_only": wgt_warned, "bg_event": wgt_event, "bg_window": wgt_bg, "end_time": wgt_end,
                              "bg_reset": btn_reset, "bg_status": wgt_status, "bg_plot": wgt_plot})
         wgt_event.observe(show_event, names="value")
-        wgt_bg.observe(set_bg, names="value")
-        btn_reset.on_click(reset_bg)
+        wgt_bg.observe(lambda change: set_time(tool.set_bg_window, *change["new"]), names="value")
+        wgt_end.observe(lambda change: set_time(tool.set_end_time, change["new"]), names="value")
+        btn_reset.on_click(reset)
         show_event()
-        display(widgets.VBox([wgt_warned, widgets.HBox([wgt_event, btn_reset]), wgt_bg, wgt_status, wgt_plot,
+        display(widgets.VBox([wgt_warned, widgets.HBox([wgt_event, btn_reset]), wgt_bg, wgt_end, wgt_status, wgt_plot,
                               self._save_events_widget()]))
 
     def run_analysis(self) -> None:

@@ -326,11 +326,12 @@ class SEPPACT:
     """Onset time, peak flux and fluence of the events of an event list
 
     Run the steps in order: run_inputs(), run_data(), run_onsets(), run_spikes(), run_peaks(), run_fluences(),
-    then plot_events() and save_results(). Background windows can be changed with set_bg_window() after run_data(),
-    before the onsets. After the onsets, set_onset() replaces the chosen onset of a channel group by another detected
-    one, or by no onset (corrections, applied again when the steps run again, and saved by save_corrections()). The
-    results stay available as attributes:
-    - events: the event list, with the windows filled in and where the background window comes from (BG Window)
+    then plot_events() and save_results(). Background windows and end times can be changed with set_bg_window() and
+    set_end_time() after run_data(), before the onsets. After the onsets, set_onset() replaces the chosen onset of a
+    channel group by another detected one, or by no onset (corrections, applied again when the steps run again, and
+    saved by save_corrections()). The results stay available as attributes:
+    - events: the event list, with the windows filled in and where the background window and the end time come from
+      (BG Window Source, End Time Source)
     - shocktimes: the times of the shocks
     - dfs_flux: the flux of the channel groups, per particle, sensor and resolution
     - df_series: the onset, data quality, peak flux and fluence of every series, one row per event, particle, sensor,
@@ -453,7 +454,7 @@ class SEPPACT:
         self.shocktimes = read_shocks(p.file_shocks)
         self.events = make_events(p)
         self.corrections, self._correction_times = read_corrections(p.file_corrections) if p.file_corrections else ({}, {})
-        self._input_windows = self.events[["BG Start", "BG End", "BG Window"]].copy()
+        self._input_windows = self.events[["BG Start", "BG End", "BG Window Source", "End Time", "End Time Source"]].copy()
 
     def run_data(self, redownload: bool = False) -> None:
         """Loads the flux of the channel groups (from the cache, or downloads it), and resamples it"""
@@ -477,17 +478,35 @@ class SEPPACT:
         self.dfs_flux = resample_flux(dfs_flux, p.resample_freqs)
 
     def set_bg_window(self, event_no: int, start, end) -> None:
-        """Sets the background window of an event (BG Window "set"), used instead of the one of the event list or the
+        """Sets the background window of an event (BG Window Source "set"), used instead of the one of the event list or the
         default one; run the onsets and the next steps again afterwards"""
         row = self.events.loc[event_no].copy()
         row["BG Start"], row["BG End"] = pd.Timestamp(start), pd.Timestamp(end)
         if error := window_order_error(row):
             raise ValueError(f"The background window of event {event_no} is not valid: {error}")
-        self.events.loc[event_no, ["BG Start", "BG End", "BG Window"]] = [row["BG Start"], row["BG End"], "set"]
+        self.events.loc[event_no, ["BG Start", "BG End", "BG Window Source"]] = [row["BG Start"], row["BG End"], "set"]
 
     def reset_bg_window(self, event_no: int) -> None:
         """Sets the background window of an event back to the one of the event list or the default one"""
-        self.events.loc[event_no, ["BG Start", "BG End", "BG Window"]] = self._input_windows.loc[event_no]
+        columns = ["BG Start", "BG End", "BG Window Source"]
+        self.events.loc[event_no, columns] = self._input_windows.loc[event_no, columns]
+
+    def set_end_time(self, event_no: int, end) -> None:
+        """Sets the end time of an event (End Time Source "set"), within its data (up to Plot End); run the onsets and the
+        next steps again afterwards"""
+        row = self.events.loc[event_no].copy()
+        row["End Time"] = pd.Timestamp(end)
+        if error := window_order_error(row):
+            raise ValueError(f"The end time of event {event_no} is not valid: {error}")
+        if row["End Time"] > row["Plot End"]:
+            raise ValueError(f"The end time of event {event_no} ({row['End Time']}) is after the end of its data "
+                             f"({row['Plot End']}). To extend it, change the event list and run the data step again.")
+        self.events.loc[event_no, ["End Time", "End Time Source"]] = [row["End Time"], "set"]
+
+    def reset_end_time(self, event_no: int) -> None:
+        """Sets the end time of an event back to the one of the event list or the default one"""
+        columns = ["End Time", "End Time Source"]
+        self.events.loc[event_no, columns] = self._input_windows.loc[event_no, columns]
 
     def bg_window_points(self, event_no: int) -> dict:
         """Returns {resolution: points} of the background window of an event: the fewest points with data in the
@@ -508,8 +527,8 @@ class SEPPACT:
                 for resample_freq, points in self.bg_window_points(event_no).items() if points < MIN_BG_POINTS]
 
     def save_events(self, path: str) -> None:
-        """Writes the events with their windows (Event No, Start Time, BG Start, BG End, End Time) as a CSV event
-        list, which can be given as file_events to use the same windows again"""
+        """Writes the events with their windows and end times (Event No, Start Time, BG Start, BG End, End Time) as a CSV
+        event list, which can be given as file_events to use the same times again"""
         self.events[["Start Time", "BG Start", "BG End", "End Time"]].to_csv(path, date_format="%Y-%m-%d %H:%M:%S")
 
     def run_onsets(self) -> None:
@@ -798,14 +817,16 @@ class SEPPACT:
 
     def results_table(self) -> pd.DataFrame:
         """Returns df_results as the table of results.csv: one row per event and channel group, with the energy range
-        of the group, where the background window of the event comes from (BG Window), and the resolutions in minutes"""
+        of the group, where the background window and the end time of the event come from (BG Window Source, End Time
+        Source), and the resolutions in minutes"""
         table = self.df_results[RESULT_COLUMNS].reset_index()
         channels = zip(table["Particle"], table["Sensor"], table["Energy Label"])
         energies = [self.group_energies(*channel) for channel in channels]
         table.insert(4, "Low Energy", [low for low, _ in energies])
         table.insert(5, "High Energy", [high for _, high in energies])
-        table.insert(table.columns.get_loc("Onset Corrected") + 1, "BG Window",
-                     self.events.loc[table["Event No"], "BG Window"].values)
+        for i, column in enumerate(("BG Window Source", "End Time Source"), start=1):
+            table.insert(table.columns.get_loc("Onset Corrected") + i, column,
+                         self.events.loc[table["Event No"], column].values)
         for column in ("Onset Resolution", "Peak Flux Resolution", "Fluence Resolution"):
             table[column] = pd.to_timedelta(table[column]).dt.total_seconds() / 60
         return table

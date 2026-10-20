@@ -88,7 +88,8 @@ def _check_event_windows(events: pd.DataFrame, source: str) -> None:
 
 def complete_events(df_event_times: pd.DataFrame, params: SEPPACT_parameters, source: str) -> pd.DataFrame:
     """Returns the events with all their times, the default ones where they are missing, their period of data
-    (Plot Start, Plot End), and where their background window comes from (BG Window: "event list" or "default")
+    (Plot Start, Plot End), and where their background window and end time come from (BG Window Source and End Time
+    Source: "event list" or "default")
 
     The data of events with a Reference Time start start_before_reference before it and end end_after_reference after
     it. Events without a background window get the default one, bg_start_after_start to bg_end_after_start after
@@ -96,6 +97,7 @@ def complete_events(df_event_times: pd.DataFrame, params: SEPPACT_parameters, so
     """
     events = df_event_times.reindex(columns=EVENT_COLUMNS).astype("datetime64[ns]")
     references = events["Reference Time"]
+    end_time_source = pd.Series("event list", index=events.index).where(events["End Time"].notna(), "default")
     events["Start Time"] = events["Start Time"].fillna(references - params.start_before_reference)
     events["End Time"] = events["End Time"].fillna(references + params.end_after_reference)
     without_bg = events["BG Start"].isna() & events["BG End"].isna()
@@ -109,7 +111,8 @@ def complete_events(df_event_times: pd.DataFrame, params: SEPPACT_parameters, so
     buffer_time = ((params.min_plot_window - (events["End Time"] - events["Start Time"])) / 2).clip(lower=timedelta(0))
     events["Plot Start"] = events["Start Time"] - buffer_time
     events["Plot End"] = events["End Time"] + buffer_time
-    events["BG Window"] = bg_window
+    events["BG Window Source"] = bg_window
+    events["End Time Source"] = end_time_source
     return events
 
 

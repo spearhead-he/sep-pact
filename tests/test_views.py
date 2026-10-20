@@ -225,7 +225,8 @@ def test_plot_background_returns_a_figure_and_saves_it(tmp_path, monkeypatch):
     assert [panel_title(ax).get_text() for ax in fig.axes] == ["electrons/HET (sun viewing, 2 mins resolution)",
                                                                "protons/HET (sun viewing, 2 mins resolution)"]
     assert [len(ax.lines) for ax in fig.axes] == [2 + 2, 3 + 2]
-    assert fig.get_suptitle() == "Event 1: background 2021-01-01 10:00 to 2021-01-01 11:55 (default)"
+    assert fig.get_suptitle() == "Event 1: background 2021-01-01 10:00 to 2021-01-01 11:55 (default), end 2021-01-03 12:00 " \
+        "(default)"
 
 
 @image_compare

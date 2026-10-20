@@ -197,7 +197,7 @@ def test_channels_without_connection(tmp_path, monkeypatch):
 
 def test_steps_need_the_previous_ones(tmp_path, monkeypatch, shown):
     tool = make_tool(tmp_path, monkeypatch)
-    tool.background_selection()
+    tool.event_times()
     tool.run_analysis()
     tool.event_viewer()
     tool.save_results()
@@ -225,13 +225,13 @@ def test_steps_of_the_analysis(tmp_path, monkeypatch, shown):
 
 
 def bg_window(tool, event_no=1) -> list:
-    return list(tool.events.loc[event_no, ["BG Start", "BG End", "BG Window"]])
+    return list(tool.events.loc[event_no, ["BG Start", "BG End", "BG Window Source"]])
 
 
-def test_background_selection(tmp_path, monkeypatch, shown):
+def test_event_times(tmp_path, monkeypatch, shown):
     tool = make_tool(tmp_path, monkeypatch)
     tool.run_data()
-    tool.background_selection()
+    tool.event_times()
     w = tool.widgets
     # the first event is shown without a click: the slider at its default window, 10:00 to 11:55, its points and plot
     assert w["bg_event"].value == 1 and w["bg_window"].index == (0, 57)
@@ -255,21 +255,52 @@ def test_background_selection(tmp_path, monkeypatch, shown):
     assert "Run the analysis step again" not in w["bg_status"].value
 
 
-def test_background_selection_after_the_analysis(tmp_path, monkeypatch, shown):
+def end_time(tool, event_no=1) -> list:
+    return list(tool.events.loc[event_no, ["End Time", "End Time Source"]])
+
+
+def test_event_times_end_time(tmp_path, monkeypatch, shown):
+    tool = make_tool(tmp_path, monkeypatch)
+    tool.run_data()
+    tool.event_times()
+    w = tool.widgets
+    # the end time slider goes from after the background window to the end of the data, and starts at the closest data
+    # point before the end time; the end time is not changed until the slider is moved
+    last = pd.Timestamp(T0 + timedelta(hours=48, minutes=-2))
+    assert w["end_time"].options[0][1] == pd.Timestamp(T0 - timedelta(minutes=4))
+    assert w["end_time"].value == last == w["end_time"].options[-1][1]
+    assert end_time(tool) == [pd.Timestamp(T0 + timedelta(hours=48)), "default"]
+    assert "End time 2021-01-03 12:00 (default)." in w["bg_status"].value
+    plot = w["bg_plot"].value
+    w["end_time"].value = pd.Timestamp(T0 + timedelta(hours=24))
+    assert end_time(tool) == [pd.Timestamp(T0 + timedelta(hours=24)), "set"]
+    assert "End time 2021-01-02 12:00 (set)." in w["bg_status"].value and w["bg_plot"].value != plot
+    # the background window ends before the end time, and the end time after the background window
+    assert w["bg_window"].options[-1][1] == pd.Timestamp(T0 + timedelta(hours=24, minutes=-2))
+    w["bg_window"].index = (30, 45)
+    assert w["end_time"].options[0][1] == pd.Timestamp(T0 - timedelta(minutes=28))
+    assert w["end_time"].value == pd.Timestamp(T0 + timedelta(hours=24))
+    # the reset gives back both the window and the end time
+    w["bg_reset"].click()
+    assert end_time(tool) == [pd.Timestamp(T0 + timedelta(hours=48)), "default"] and bg_window(tool)[2] == "default"
+    assert w["end_time"].value == last
+
+
+def test_event_times_after_the_analysis(tmp_path, monkeypatch, shown):
     tool = make_tool(tmp_path, monkeypatch)
     tool.run_data()
     tool.run_analysis()
-    tool.background_selection()
+    tool.event_times()
     tool.widgets["bg_window"].index = (30, 45)
     assert "Run the analysis step again" in tool.widgets["bg_status"].value
 
 
-def test_background_selection_of_the_events_with_warnings(tmp_path, monkeypatch, shown):
+def test_event_times_of_the_events_with_warnings(tmp_path, monkeypatch, shown):
     events = {1: {**bg_end_event(T0 - timedelta(minutes=5)), "BG Start": T0 - timedelta(hours=2)},
               2: {**bg_end_event(T0 - timedelta(minutes=90)), "BG Start": T0 - timedelta(hours=2)}}
     tool = make_tool(tmp_path, monkeypatch, events=events)
     tool.run_data()
-    tool.background_selection()
+    tool.event_times()
     w = tool.widgets
     assert "Only the 1 event with background warnings" in w["bg_warned_only"].description
     w["bg_warned_only"].value = True
@@ -280,10 +311,10 @@ def test_background_selection_of_the_events_with_warnings(tmp_path, monkeypatch,
     assert w["bg_event"].value == 1
 
 
-def test_background_selection_without_events_with_warnings(tmp_path, monkeypatch, shown):
+def test_event_times_without_events_with_warnings(tmp_path, monkeypatch, shown):
     tool = make_tool(tmp_path, monkeypatch)
     tool.run_data()
-    tool.background_selection()
+    tool.event_times()
     tool.widgets["bg_warned_only"].value = True
     assert tool.widgets["bg_event"].value is None
     assert tool.widgets["bg_status"].value == "" and bytes(tool.widgets["bg_plot"].value) == b""
@@ -292,7 +323,7 @@ def test_background_selection_without_events_with_warnings(tmp_path, monkeypatch
 def test_save_events(tmp_path, monkeypatch, shown):
     tool = make_tool(tmp_path, monkeypatch)
     tool.run_data()
-    tool.background_selection()
+    tool.event_times()
     w = tool.widgets
     w["bg_window"].index = (30, 45)
     assert w["events_path"].value == os.path.join(tool.parameters.dir_outputs, "events.csv")
