@@ -4,6 +4,23 @@ All notable changes of SEP-PACT. The format is based on [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+
+- Event times step in the notebook (`tool.event_times()`, between the data and the analysis): the background window and the end time of each event set with sliders over its data, with the number of points of the window at each resolution, a warning when it is fewer than 3, a plot of the flux of all the channel groups, and the event list with the times saved for later runs. In scripts: `set_bg_window()`, `set_end_time()`, `reset_bg_window()`, `reset_end_time()`, `bg_window_points()`, `bg_window_warnings()` and `save_events()`. See [Event times](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#event-times-step).
+- Onset corrections in the event viewer: the onset of each channel group set to another detected onset or to no onset, with the peak flux and fluence of the event calculated again, and the corrections saved and applied in later runs with the new parameter `file_corrections` (Onsets tab). In scripts: `set_onset()`, `reset_onset()` and `save_corrections()`. See [Onset corrections](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#onset-corrections).
+- `results.csv` columns `Onset Corrected`, `BG Window Source` and `End Time Source`.
+- "(corrected)" in the titles of the panels with a corrected onset, and a note in the event viewer on the colours of the panel titles.
+
+### Changed
+
+- Panel titles of channel groups with the onset at the end of the background window are orange; red stays for channel groups without an onset.
+- The legend of the plots has an entry for every line drawn (`Data (Onset)`, `Data (Peak Flux)`, `Data (Fluence)`, `Data (No Onset)`, `Fluence Threshold`), grouped by quantity. The flux of the peak flux is teal and the one of the fluence brown dash-dotted, the fluence threshold is dotted and the shocks are pink, and the horizontal lines are drawn over the flux. See [Plots](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#plots).
+
+### Upgrading from 0.2.0
+
+- Results do not change unless the event times or onsets are changed in the new steps; `results.csv` has the three new columns.
+- The notebook has a new cell, `tool.event_times()`; get the new `sep-pact.ipynb`.
+
 ## [0.2.0] - 2026-10-20
 
 ### Added
