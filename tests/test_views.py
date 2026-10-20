@@ -3,6 +3,7 @@ import os
 from datetime import timedelta
 
 import pytest
+from matplotlib.collections import PolyCollection
 from matplotlib.figure import Figure
 from matplotlib.text import Text
 
@@ -61,7 +62,29 @@ def test_plot_event_with_the_peak_in_another_viewing(tmp_path, monkeypatch):
     tool = run(synthetic_tool(tmp_path, monkeypatch, fake=fake))
     fig = plot_event(tool, 1)
     # the flux at the onset viewing (solid) and at the peak flux viewing, north (dashed)
-    assert [line.get_linestyle() for line in fig.axes[0].get_lines() if line.get_color() == "orange"] == ["-", "--"]
+    assert [(line.get_color(), line.get_linestyle()) for line in fig.axes[0].get_lines()
+            if line.get_color() in ("orange", "teal")] == [("orange", "-"), ("teal", "--")]
+
+
+def test_plot_event_order_of_the_lines(tmp_path, monkeypatch):
+    rises = {(particle, viewing): T0 for particle in ("electrons", "protons") for viewing in VIEWINGS}
+    fake = FakeEPD(rises, peaks={("electrons", "north"): 300.0})
+    tool = run(synthetic_tool(tmp_path, monkeypatch, fake=fake, shocks=[T0 + timedelta(hours=8)]))
+    ax = plot_event(tool, 1).axes[0]
+    zorders = {}
+    for line in ax.get_lines():
+        zorders.setdefault(line.get_color(), set()).add(line.get_zorder())
+    # the flux of the onset is on top of the one of the peak flux, which is on top of the one of the fluence
+    data = [max(zorders[color]) for color in ("orange", "teal", "saddlebrown")]
+    assert data == sorted(data, reverse=True)
+    # then the horizontal lines (levels and thresholds), the vertical lines (onset and shocks), and the texts
+    horizontal = set.union(*(zorders[color] for color in ("blue", "red", "purple")))
+    vertical = zorders["green"] | zorders["deeppink"]
+    # the shaded areas (background, event range and fluence) are behind them all
+    areas = [area.get_zorder() for area in ax.collections if isinstance(area, PolyCollection)]
+    assert len(areas) == 3 and max(areas) < min(zorders["saddlebrown"])
+    assert max(data) < min(horizontal) and max(horizontal) < min(vertical)
+    assert max(vertical) < min(text.get_zorder() for text in ax.texts)
 
 
 # channel groups added one by one, for the plots of 1 to 6 groups
@@ -100,7 +123,8 @@ def test_plot_event_copied_onsets_at_the_end_of_the_background(tmp_path, monkeyp
     events = {1: bg_end_event(T0 - timedelta(minutes=2))}
     tool = run(synthetic_tool(tmp_path, monkeypatch, rises, events=events))
     fig = plot_event(tool, 1)
-    assert all(panel_title(ax).get_color() == "red" for ax in fig.axes)  # every onset is at the end of the background
+    # every onset is at the end of the background
+    assert all(panel_title(ax).get_color() == "darkorange" for ax in fig.axes)
     texts = [t.get_text() for t in fig.axes[2].texts]
     assert any("(from 1 MeV electrons, at BG end)" in text for text in texts)
     return fig
@@ -129,14 +153,32 @@ def test_plot_event_without_peak_flux_and_fluence(tmp_path, monkeypatch):
     return fig
 
 
-def legend_labels(fig) -> list[str]:
-    return [text.get_text() for text in fig.axes[0].get_legend().get_texts()]
+def legend_labels(fig, empty: bool = False) -> list[str]:
+    """The labels of the legend, without the empty entries that complete the columns of a group unless empty"""
+    labels = [text.get_text() for text in fig.axes[0].get_legend().get_texts()]
+    return labels if empty else [label for label in labels if label]
 
 
 def test_legend_without_shocks_in_the_plot(tmp_path, monkeypatch):
     fig = plot_event(run(synthetic_tool(tmp_path, monkeypatch, shocks=[T0 + timedelta(days=30)])), 1)
-    assert legend_labels(fig) == ["Data", "Event Range", "BG sample", "BG Level", "Peak Flux", "0.5 × Peak Flux",
-                                  "2σ Threshold", "Onset Time", "Fluence"]
+    # the fluence is at another resolution than the peak flux: its data are drawn too
+    # one group per quantity, each in whole columns of two rows: the onset, the peak flux, the fluence and the event
+    assert legend_labels(fig, empty=True) == [
+        "Data (Onset)", "BG sample", "BG Level", "2σ Threshold", "Onset Time", "",
+        "Peak Flux", "0.5 × Peak Flux", "Data (Fluence)", "Fluence", "Fluence Threshold", "", "Event Range", ""]
+    assert fig.axes[0].get_legend()._ncols == 7
+
+
+def test_legend_with_the_data_of_the_peak_flux(tmp_path, monkeypatch):
+    rises = {(particle, viewing): T0 for particle in ("electrons", "protons") for viewing in VIEWINGS}
+    tool = run(synthetic_tool(tmp_path, monkeypatch, fake=FakeEPD(rises, peaks={("electrons", "north"): 300.0})))
+    assert "Data (Peak Flux)" in legend_labels(plot_event(tool, 1))
+
+
+def test_legend_of_the_background_plot(tmp_path, monkeypatch):
+    fig = plot_background(synthetic_tool(tmp_path, monkeypatch), 1)
+    assert [text.get_text() for text in fig.axes[0].get_legend().get_texts()] == \
+        ["1 MeV", "5.9930 - 18.8300 MeV", "background window", "start and end time"]
 
 
 def test_legend_with_a_shock_in_the_plot(tmp_path, monkeypatch):
@@ -146,7 +188,7 @@ def test_legend_with_a_shock_in_the_plot(tmp_path, monkeypatch):
 
 def test_legend_without_onsets(tmp_path, monkeypatch):
     fig = plot_event(run(synthetic_tool(tmp_path, monkeypatch, rises={})), 1)
-    assert legend_labels(fig) == ["Data", "Event Range", "BG sample"]
+    assert legend_labels(fig, empty=True) == ["Data (No Onset)", "BG sample", "Event Range", ""]
 
 
 def test_legend_entry_drawn_in_one_panel_only(tmp_path, monkeypatch):
@@ -191,3 +233,14 @@ def test_plot_background(tmp_path, monkeypatch):
     tool = synthetic_tool(tmp_path, monkeypatch, events={1: bg_end_event(T0 - timedelta(minutes=5))})
     tool.set_bg_window(1, T0 - timedelta(hours=1), T0 - timedelta(minutes=10))
     return plot_background(tool, 1)
+
+
+def test_plot_event_titles_of_corrected_onsets(tmp_path, monkeypatch):
+    tool = run(synthetic_tool(tmp_path, monkeypatch))
+    tool.set_onset(1, "electrons", "HET", "1 MeV", 2, "asun")
+    tool.set_onset(1, "protons", "HET", "8 MeV")
+    titles = [panel_title(ax) for ax in plot_event(tool, 1).axes]
+    assert titles[0].get_text() == "1 MeV electrons/HET (asun viewing, 2 mins resolution) (corrected)"
+    assert titles[2].get_text() == "8 MeV protons/HET (sun viewing, 30 mins resolution) (corrected)"
+    assert titles[2].get_color() == "red"
+    assert not titles[1].get_text().endswith("(corrected)") and not titles[3].get_text().endswith("(corrected)")

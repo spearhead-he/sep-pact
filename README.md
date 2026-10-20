@@ -74,9 +74,9 @@ The plot of the example event (2021-11-01) has one panel per channel group: 1 Me
 - the onset time (green line), calculated with the n-sigma method;
 - the peak flux (red point);
 - the fluence interval (brown), calculated following [Jiggens et al. (2018)](https://doi.org/10.1051/swsc/2018010);
-- the interplanetary shocks of the [ipshocks database](https://ipshocks.helsinki.fi/) (purple, dotted).
+- the interplanetary shocks of the [ipshocks database](https://ipshocks.helsinki.fi/) (pink).
 
-A red title marks a channel group without an onset, or with an onset at the end of the background window. The [user guide](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#plots) explains every element of the plot.
+A red title marks a channel group without an onset, and an orange title one with its onset at the end of the background window. The [user guide](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#plots) explains every element of the plot.
 
 ## What's new in v0.2.0
 

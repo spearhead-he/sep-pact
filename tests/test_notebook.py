@@ -130,6 +130,20 @@ def test_event_list_and_shock_list_info(tmp_path, monkeypatch):
     assert tool.parameters.file_events == str(path)
 
 
+def test_corrections_file_info(tmp_path, monkeypatch):
+    tool = make_tool(tmp_path, monkeypatch)
+    assert tool.widgets["file_corrections_info"].value == "No corrections: the onsets are chosen automatically."
+    path = tmp_path / "corrections.csv"
+    path.write_text("Event No,Particle,Sensor,Energy Label,Onset Resolution,Onset Viewing,Onset Time\n"
+                    "1,electrons,HET,1 MeV,2,asun,2021-01-01 13:00:00\n1,protons,HET,8 MeV,,,\n")
+    tool.widgets["file_corrections"].value = str(path)
+    assert tool.parameters.file_corrections == str(path)
+    assert tool.widgets["file_corrections_info"].value == "2 corrections, applied after the automatic choice."
+    assert "File not found: missing.csv" in tool._corrections_info("missing.csv")
+    path.write_text("Event No,Particle\n1,electrons\n")
+    assert "have no column" in tool._corrections_info(str(path))
+
+
 def group_by_label(tool, label):
     return next(group for group in tool._groups if group["label"] == label)
 
@@ -323,6 +337,82 @@ def test_event_viewer(tmp_path, monkeypatch, shown):
     assert tool._flagged_events() == [2]
     tool.widgets["flagged_only"].value = True
     assert [value for _, value in tool.widgets["event"].options] == [2] and tool.widgets["event"].value == 2
+
+
+def onset_values(tool) -> list:
+    return [value for _, value in tool.widgets["onset"].options]
+
+
+def test_onset_correction(tmp_path, monkeypatch, shown):
+    rises = {(particle, viewing): T0 if viewing == "sun" else T0 + timedelta(hours=1)
+             for particle in ("electrons", "protons") for viewing in VIEWINGS}
+    events = {1: {"Reference Time": T0}, 2: {"Reference Time": T0 + timedelta(minutes=30)}}
+    tool = make_tool(tmp_path, monkeypatch, fake=FakeEPD(rises), events=events)
+    tool.run_data()
+    tool.run_analysis()
+    tool.event_viewer()
+    w = tool.widgets
+    two = pd.Timedelta(minutes=2)
+    # the first channel group of the first event, with its detected onsets and its chosen one
+    assert w["group"].value == ("electrons", "HET", "1 MeV") and w["onset"].value == (two, "sun")
+    assert onset_values(tool)[0] is None and len(onset_values(tool)) == 1 + 4 * 4
+    assert w["onset"].options[1][0] == "2021-01-01 11:58, 2 min, sun"
+    assert w["onset_status"].value == "Chosen automatically"
+    plot = w["plot"].value
+    # while the event is calculated again, a note is shown and the correction cannot be changed
+    statuses = []
+    w["onset_status"].observe(lambda change: statuses.append((change["new"], w["onset"].disabled)), names="value")
+    w["onset"].value = (two, "asun")
+    assert statuses[0] == ("\u23f3 Calculating the peak flux and fluence of event 1 again, and drawing its plot...", True)
+    assert statuses[-1] == ("Corrected", False) and not w["onset_reset"].disabled
+    assert tool.seppact.corrections == {(1, "electrons", "HET", "1 MeV"): (two, "asun")}
+    assert w["onset_status"].value == "Corrected" and w["plot"].value != plot
+    assert "<td>asun</td>" in w["table"].value
+    w["group"].value = ("protons", "HET", "8 MeV")
+    w["onset"].value = None
+    assert pd.isna(tool.df_results.loc[(1, "protons", "HET", "8 MeV"), "Onset Time"])
+    # the other event has its own groups and onsets
+    w["next"].click()
+    assert w["group"].value == ("electrons", "HET", "1 MeV") and w["onset_status"].value == "Chosen automatically"
+    w["previous"].click()
+    assert w["group"].value == ("electrons", "HET", "1 MeV") and w["onset"].value == (two, "asun")
+    w["onset_reset"].click()
+    assert w["onset"].value == (two, "sun") and w["onset_status"].value == "Chosen automatically"
+    assert list(tool.seppact.corrections) == [(1, "protons", "HET", "8 MeV")]
+    # the corrections are saved, and applied again from the file
+    w["corrections_path"].value = str(tmp_path / "new" / "corrections.csv")
+    w["save_corrections"].click()
+    assert "Saved 1 correction to" in w["corrections_saved"].value
+    tool.widgets["file_corrections"].value = str(tmp_path / "new" / "corrections.csv")
+    tool.run_data()
+    tool.run_analysis()
+    assert tool.df_results["Onset Corrected"].tolist() == [False, False, True, False, False] + [False] * 5
+
+
+def test_event_viewer_explains_the_panel_titles(tmp_path, monkeypatch, shown):
+    tool = make_tool(tmp_path, monkeypatch)
+    tool.run_data()
+    tool.run_analysis()
+    tool.event_viewer()
+    assert "Panel titles in red: channel groups without an onset" in " ".join(
+        w.value for w in all_widgets(shown[-1]) if isinstance(w, widgets.HTML))
+
+
+def test_onset_option_notes():
+    row = pd.Series({"Onset Time": pd.Timestamp(T0), "Usable": False, "Onset Copied": True})
+    assert SEPPACT_notebook._onset_option(pd.Timedelta(minutes=30), "north", row) == \
+        "2021-01-01 12:00, 30 min, north (not usable, copied)"
+
+
+def test_save_corrections_error(tmp_path, monkeypatch, shown):
+    tool = make_tool(tmp_path, monkeypatch)
+    tool.run_data()
+    tool.run_analysis()
+    tool.event_viewer()
+    (tmp_path / "file").write_text("")
+    tool.widgets["corrections_path"].value = str(tmp_path / "file" / "corrections.csv")
+    tool.widgets["save_corrections"].click()
+    assert "Error" in tool.widgets["corrections_saved"].value
 
 
 @pytest.mark.parametrize("save_plots", [True, False])

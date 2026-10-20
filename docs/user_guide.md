@@ -289,24 +289,26 @@ wide = results.set_index(["Event No", "Particle", "Sensor", "Energy Label"]).uns
 
 ## Plots
 
-Each plot, `event_<number>.png`, has the title of the event, the legend, and one panel per channel group, `panel_height` inches high. The legend lists only the elements drawn in at least one panel, e.g. Shock Time only when a shock is in the plot. The title of a panel, in its top-right corner, gives the group, the particle and sensor, and the viewing and resolution of the onset. Each panel shows:
+Each plot, `event_<number>.png`, has the title of the event, the legend, and one panel per channel group, `panel_height` inches high. The legend lists only the elements drawn in at least one panel, e.g. Shock Time only when a shock is in the plot, grouped by quantity: the onset, the peak flux, the fluence, and the event. The title of a panel, in its top-right corner, gives the group, the particle and sensor, and the viewing and resolution of the onset. Each panel shows:
 
-| Element | Meaning |
-|---|---|
-| Orange line | Flux at the resolution and viewing of the onset |
-| Orange dashed line | Flux at the resolution and viewing of the peak flux, if they are different |
-| Brown dotted line | Flux at the resolution of the fluence, if it is different from the one of the peak flux |
-| Green area | Background window |
-| Blue dashed line | Background level |
-| Red dashed line | Onset threshold |
-| Green line and label | Onset time; the label notes "from 1 MeV electrons" for an onset copied from the reference channel, and "at BG end" for an onset at the end of the background window |
-| Grey area | Event range, from the onset to the end (or the first shock after the onset) |
-| Red point and label | Peak flux, with its time, viewing and resolution |
-| Purple dashed lines | `fluence_peak_fraction` of the peak flux, and the fluence threshold |
-| Brown area and label | Fluence interval, with the fluence, its viewing and resolution |
-| Purple dotted lines | Interplanetary shocks |
-| Text in the bottom-right corner | Quality of the onset data: the ratio of transitions to zero or NaN values, and the numbers of zero and valid values |
+| Element | Legend | Meaning |
+|---|---|---|
+| Orange line | Data (Onset) | Flux at the resolution and viewing of the onset |
+| Light orange line | Data (No Onset) | Flux in `fallback_viewing` at the coarsest resolution, of a channel group without an onset |
+| Green area | BG sample | Background window |
+| Blue dashed line | BG Level | Background level |
+| Red dashed line | nσ Threshold | Onset threshold |
+| Green dashed line and label | Onset Time | Onset time; the label notes "from 1 MeV electrons" for an onset copied from the reference channel, and "at BG end" for an onset at the end of the background window |
+| Teal dashed line | Data (Peak Flux) | Flux at the resolution and viewing of the peak flux, if they are different from those of the onset |
+| Red point and label | Peak Flux | Peak flux, with its time, viewing and resolution |
+| Purple dashed line | 0.5 × Peak Flux | `fluence_peak_fraction` of the peak flux |
+| Brown dash-dotted line | Data (Fluence) | Flux at the resolution of the fluence, if it is different from the one of the peak flux |
+| Brown area and label | Fluence | Fluence interval, with the fluence, its viewing and resolution |
+| Purple dotted line | Fluence Threshold | The fluence threshold, at the resolution of the fluence |
+| Grey area | Event Range | Event range, from the onset to the end (or the first shock after the onset) |
+| Pink lines and labels | Shock Time | Interplanetary shocks, with their times |
+| Text in the bottom-right corner | | Quality of the onset data: the ratio of transitions to zero or NaN values, and the numbers of zero and valid values |
 
-A red title marks a channel group:
-- without an onset: the panel then shows the flux in `fallback_viewing` at the coarsest resolution, with the background window and the event range;
-- with an onset at the end of the background window.
+The colour of a panel title marks a channel group:
+- red, without an onset: the panel then shows the flux in `fallback_viewing` at the coarsest resolution, with the background window and the event range;
+- orange, with its onset at the end of the background window, where the event may have started earlier.
