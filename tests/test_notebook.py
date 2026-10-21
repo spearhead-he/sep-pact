@@ -286,6 +286,49 @@ def test_event_times_end_time(tmp_path, monkeypatch, shown):
     assert w["end_time"].value == last
 
 
+def test_event_times_of_a_particle_and_sensor(tmp_path, monkeypatch, shown):
+    tool = make_tool(tmp_path, monkeypatch)
+    tool.run_data()
+    tool.event_times()
+    w = tool.widgets
+    assert [label for label, _ in w["bg_window_of"].options] == ["Event", "electrons HET", "protons HET"]
+    assert w["bg_window_of"].value == ("", "")
+    tool.seppact.set_end_time(1, T0 + timedelta(hours=24))
+    w["bg_window_of"].value = ("protons", "HET")
+    # the window of the event until the protons have their own
+    assert w["bg_window"].index == (0, 57)
+    w["bg_window"].index = (30, 45)
+    assert tool.seppact.bg_window(1, "protons", "HET") == (pd.Timestamp(T0 - timedelta(hours=1)),
+                                                           pd.Timestamp(T0 - timedelta(minutes=30)), "set", "protons",
+                                                           "HET")
+    assert bg_window(tool)[2] == "default"
+    status = w["bg_status"].value
+    assert "Background 2021-01-01 10:00 to 2021-01-01 11:55 (default); points: 58 at 2 min" in status
+    assert "Background of protons HET 2021-01-01 11:00 to 2021-01-01 11:30 (set); points: 16 at 2 min" in status
+    assert "The background window of event 1, protons HET has 2 points at the 30 min resolution" in status
+    # the event shows its own window again
+    w["bg_window_of"].value = ("", "")
+    assert w["bg_window"].index == (0, 57)
+    # the end time goes after all the windows
+    w["bg_window_of"].value = ("protons", "HET")
+    w["bg_window"].index = (30, 100)
+    assert w["end_time"].options[0][1] == pd.Timestamp(T0 + timedelta(hours=1, minutes=22))
+    # the reset of the protons keeps the end time
+    w["bg_reset"].click()
+    assert tool.seppact.bg_window(1, "protons", "HET")[2:] == ("default", "", "")
+    assert end_time(tool) == [pd.Timestamp(T0 + timedelta(hours=24)), "set"]
+    assert "Background of" not in w["bg_status"].value
+
+
+def test_event_times_window_options_of_particles_with_more_sensors(tmp_path, monkeypatch, shown):
+    tool = make_tool(tmp_path, monkeypatch)
+    tool.run_data()
+    # only HET so far: a particle with more sensors gets the option of all of them
+    tool.seppact.sensors["protons"] = {"HET", "EPT"}
+    assert [label for label, _ in tool._window_options()] == ["Event", "electrons HET", "protons (all sensors)",
+                                                              "protons EPT", "protons HET"]
+
+
 def test_event_times_after_the_analysis(tmp_path, monkeypatch, shown):
     tool = make_tool(tmp_path, monkeypatch)
     tool.run_data()
@@ -306,7 +349,6 @@ def test_event_times_of_the_events_with_warnings(tmp_path, monkeypatch, shown):
     w["bg_warned_only"].value = True
     assert [value for _, value in w["bg_event"].options] == [2] and w["bg_event"].value == 2
     assert w["bg_window"].index == (0, 15) and "fewer than 3" in w["bg_status"].value
-    tool.events.loc[2, "BG End"] = T0 - timedelta(minutes=30)
     w["bg_warned_only"].value = False
     assert w["bg_event"].value == 1
 

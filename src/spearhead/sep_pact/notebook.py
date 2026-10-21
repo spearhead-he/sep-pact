@@ -614,34 +614,57 @@ class SEPPACT_notebook:
         wgt_subset.observe(set_options, names="value")
         return wgt_subset, wgt_event
 
+    def _window_options(self) -> list[tuple]:
+        """The options of the window dropdown: the event, then each particle with more than one sensor and each
+        particle and sensor of the channel groups, as (label, (particle, sensor))"""
+        tool = self.seppact
+        options = [("Event", ("", ""))]
+        for particle in tool.particles:
+            sensors = sorted(tool.sensors[particle])
+            if len(sensors) > 1:
+                options.append((f"{particle} (all sensors)", (particle, "")))
+            options += [(f"{particle} {sensor}", (particle, sensor)) for sensor in sensors]
+        return options
+
     def _times_status(self, event_no: int) -> str:
-        """The background window and the end time of an event, where they come from, the points of the window at each
+        """The background windows and the end time of an event, where they come from, the points of each window at each
         resolution and its warnings"""
         tool = self.seppact
+        users = tool.bg_window_series(event_no)
+        lines = []
+        for key in [("", ""), *[key[1:] for key in tool.bg_windows.own_windows(event_no)]]:
+            window = tool.bg_window(event_no, *key)
+            of = f" of {' '.join(filter(None, key))}" if key[0] else ""
+            text = f"Background{of} {window.start:%Y-%m-%d %H:%M} to {window.end:%Y-%m-%d %H:%M} ({window.source})"
+            if key in users:
+                counts = [tool.bg_window_points(event_no, *pair) for pair in users[key]]
+                text += "; points: " + ", ".join(f"{min(count[freq] for count in counts)} at {freq.total_seconds() / 60:g} "
+                                                 "min" for freq in tool.params.resample_freqs)
+            lines.append(html.escape(text + "."))
         event = tool.events.loc[event_no]
-        points = ", ".join(f"{n} at {freq.total_seconds() / 60:g} min" for freq, n in tool.bg_window_points(event_no).items())
-        lines = [html.escape(f"Background {event['BG Start']:%Y-%m-%d %H:%M} to {event['BG End']:%Y-%m-%d %H:%M} "
-                             f"({event['BG Window Source']}); points: {points}. "
-                             f"End time {event['End Time']:%Y-%m-%d %H:%M} ({event['End Time Source']}).")]
+        lines.append(html.escape(f"End time {event['End Time']:%Y-%m-%d %H:%M} ({event['End Time Source']})."))
         lines += [f'<span style="color: red">{html.escape(warning)}</span>' for warning in tool.bg_window_warnings(event_no)]
         if tool.df_series is not None:
             lines.append("<b>Run the analysis step again to use the changed times.</b>")
         return "<br>".join(lines)
 
-    def _time_slider_points(self, event_no: int) -> tuple:
-        """The times and indices of the sliders of an event, its data points at the finest resolution: from the start to
-        the end time for the background window, with the points of the window (the closest ones inside it), and after
-        the background window to the end of the data for the end time, with the point of the end time (the closest one
-        before it)"""
+    def _time_slider_points(self, event_no: int, key: tuple = ("", "")) -> tuple:
+        """The times and indices of the sliders of an event, its data points at the finest resolution (of the particle
+        and sensor of the window, or of the first ones): from the start to the end time for the background window of
+        key (particle, sensor), with the points of the window (the closest ones inside it), and after all the
+        background windows of the event to the end of the data for the end time, with the point of the end time (the
+        closest one before it)"""
         tool = self.seppact
         event = tool.events.loc[event_no]
-        particle = next(iter(tool.particles))
-        sensor = next(iter(tool.sensors[particle]))
+        particle = key[0] or next(iter(tool.particles))
+        sensor = key[1] or sorted(tool.sensors[particle])[0]
         times = tool.dfs_flux[particle][sensor][tool.params.resample_freqs[0]].loc[event_no].index
+        window = tool.bg_window(event_no, *key)
         bg_times = times[(times >= event["Start Time"]) & (times < event["End Time"])]
-        i_start = min(int(bg_times.searchsorted(event["BG Start"])), len(bg_times) - 1)
-        i_end = max(int(bg_times.searchsorted(event["BG End"], side="right")) - 1, i_start)
-        end_times = times[(times > event["BG End"]) & (times <= event["Plot End"])]
+        i_start = min(int(bg_times.searchsorted(window.start)), len(bg_times) - 1)
+        i_end = max(int(bg_times.searchsorted(window.end, side="right")) - 1, i_start)
+        last_bg_end = tool.bg_windows.to_frame().xs(event_no, level="Event No")["BG End"].max()
+        end_times = times[(times > last_bg_end) & (times <= event["Plot End"])]
         i_end_time = max(int(end_times.searchsorted(event["End Time"], side="right")) - 1, 0)
         return bg_times, (i_start, i_end), end_times, i_end_time
 
@@ -668,22 +691,27 @@ class SEPPACT_notebook:
         return widgets.VBox([widgets.HBox([wgt_path, btn_save]), wgt_saved])
 
     def event_times(self) -> None:
-        """The background window and the end time of the event chosen in the dropdown, set with the sliders, and its plot
+        """The background windows and the end time of the event chosen in the dropdown, set with the sliders, and its
+        plot
 
-        The sliders go over the data points of the event at the finest resolution: from the start to the end time for
-        the background window, and from the end of the background window to the end of the data for the end time.
+        The window dropdown chooses the window of the event, or of a particle and sensor. The sliders go over the data
+        points of the event at the finest resolution: from the start to the end time for the background window, and
+        from the end of the background windows to the end of the data for the end time.
         """
         if not self._has_data():
             return
         tool = self.seppact
         wgt_warned, wgt_event = self._event_choice([n for n in tool.events.index if tool.bg_window_warnings(n)],
                                                    "with background warnings")
+        wgt_window = widgets.Dropdown(options=self._window_options(), value=("", ""), description="Window of:",
+                                      style=self._style)
         wgt_bg = widgets.SelectionRangeSlider(options=[("", None)], description="Background:", continuous_update=False,
                                               style=self._style, layout=widgets.Layout(width="95%"))
         # a slider needs an option before it gets the times of the event
         wgt_end = widgets.SelectionSlider(options=[("", 0)], description="End time:", continuous_update=False,
                                           style=self._style, layout=widgets.Layout(width="95%"))
-        btn_reset = widgets.Button(description="Reset", tooltip="The times of the event list, or the default ones")
+        btn_reset = widgets.Button(description="Reset", tooltip="The window of the event list, or the default one; for "
+                                   "the event, also its end time")
         wgt_status = widgets.HTML()
         wgt_plot = widgets.Image(format="png", layout=widgets.Layout(max_width="100%", height="auto"))
         # the sliders are not applied to the event while they are set to the event's times
@@ -693,7 +721,7 @@ class SEPPACT_notebook:
             if wgt_event.value is None:
                 wgt_status.value, wgt_plot.value = "", b""
                 return
-            bg_times, bg_index, end_times, end_index = self._time_slider_points(wgt_event.value)
+            bg_times, bg_index, end_times, end_index = self._time_slider_points(wgt_event.value, wgt_window.value)
             updating["sliders"] = True
             wgt_bg.options = [(f"{t:%Y-%m-%d %H:%M}", t) for t in bg_times]
             wgt_bg.index = bg_index
@@ -711,23 +739,26 @@ class SEPPACT_notebook:
             except ValueError as e:
                 wgt_status.value = _error_text(str(e))
                 return
-            # the window limits the end time, and the end time the window
+            # the windows limit the end time, and the end time the windows
             show_event()
 
         def reset(_):
-            tool.reset_bg_window(wgt_event.value)
-            tool.reset_end_time(wgt_event.value)
+            tool.reset_bg_window(wgt_event.value, *wgt_window.value)
+            if wgt_window.value == ("", ""):
+                tool.reset_end_time(wgt_event.value)
             show_event()
 
-        self.widgets.update({"bg_warned_only": wgt_warned, "bg_event": wgt_event, "bg_window": wgt_bg, "end_time": wgt_end,
-                             "bg_reset": btn_reset, "bg_status": wgt_status, "bg_plot": wgt_plot})
+        self.widgets.update({"bg_warned_only": wgt_warned, "bg_event": wgt_event, "bg_window_of": wgt_window,
+                             "bg_window": wgt_bg, "end_time": wgt_end, "bg_reset": btn_reset, "bg_status": wgt_status,
+                             "bg_plot": wgt_plot})
         wgt_event.observe(show_event, names="value")
-        wgt_bg.observe(lambda change: set_time(tool.set_bg_window, *change["new"]), names="value")
+        wgt_window.observe(show_event, names="value")
+        wgt_bg.observe(lambda change: set_time(tool.set_bg_window, *change["new"], *wgt_window.value), names="value")
         wgt_end.observe(lambda change: set_time(tool.set_end_time, change["new"]), names="value")
         btn_reset.on_click(reset)
         show_event()
-        display(widgets.VBox([wgt_warned, widgets.HBox([wgt_event, btn_reset]), wgt_bg, wgt_end, wgt_status, wgt_plot,
-                              self._save_events_widget()]))
+        display(widgets.VBox([wgt_warned, widgets.HBox([wgt_event, wgt_window, btn_reset]), wgt_bg, wgt_end, wgt_status,
+                              wgt_plot, self._save_events_widget()]))
 
     def run_analysis(self) -> None:
         """Runs the onsets, spikes, peak flux and fluence steps, and summarises the chosen onsets"""

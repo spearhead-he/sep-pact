@@ -548,15 +548,20 @@ class SEPPACT:
                                         for p, s in self._series_pairs(particle, sensor))
         return points
 
-    def bg_window_warnings(self, event_no: int) -> list[str]:
-        """Returns a warning for each background window of an event, and each resolution, at which a series has fewer
-        than MIN_BG_POINTS points in it"""
+    def bg_window_series(self, event_no: int) -> dict:
+        """Returns {(particle, sensor) of each background window of an event used by a series, ("", "") for the window
+        of the event: the (particle, sensor) of the series that use it}"""
         users = {}
         for p, s in self._series_pairs():
             window = self.bg_window(event_no, p, s)
             users.setdefault((window.particle, window.sensor), []).append((p, s))
+        return users
+
+    def bg_window_warnings(self, event_no: int) -> list[str]:
+        """Returns a warning for each background window of an event, and each resolution, at which a series has fewer
+        than MIN_BG_POINTS points in it"""
         warnings = []
-        for key, pairs in users.items():
+        for key, pairs in self.bg_window_series(event_no).items():
             counts = [self.bg_window_points(event_no, p, s) for p, s in pairs]
             for resample_freq in self.params.resample_freqs:
                 points = min(count[resample_freq] for count in counts)
