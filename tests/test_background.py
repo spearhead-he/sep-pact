@@ -128,7 +128,7 @@ def test_split_event_rows_sensor_without_a_particle():
 def test_split_event_rows_particle_without_a_window():
     df = event_rows([{"Event No": 1, "Start Time": T0, "End Time": T0 + 30 * HOUR},
                      {"Event No": 1, "Particle": "protons", "Sensor": "HET", "BG Start": T0}])
-    with pytest.raises(ValueError, match="Event 1, protons HET of the event list has no BG End"):
+    with pytest.raises(ValueError, match="The row of event 1, protons HET in the event list has no BG End"):
         split_event_rows(df)
 
 
@@ -173,7 +173,8 @@ def test_windows_of_unknown_events():
     ((1, "protons", ""), (T0, T0 + 31 * HOUR)),
 ])
 def test_windows_outside_the_data_range(key, window):
-    with pytest.raises(ValueError, match=f"The background window of {key_label(*key)}: the times must be in the order"):
+    message = f"The background window of {key_label(*key)} is not valid: the times must be in the order"
+    with pytest.raises(ValueError, match=message):
         BackgroundWindows(ranges(1), windows({key: window}))
 
 
@@ -207,8 +208,8 @@ def test_set_and_reset_the_window_of_a_particle_and_sensor():
 
 def test_set_a_window_outside_the_data_range():
     bg = BackgroundWindows(ranges(1), default=DEFAULT)
-    with pytest.raises(ValueError, match="The background window of Event 1, protons HET: the times must be in the "
-                                         "order Start Time <= BG Start < BG End < End Time"):
+    with pytest.raises(ValueError, match="The background window of event 1, protons HET is not valid: the times must be "
+                                         "in the order Start Time <= BG Start < BG End < End Time"):
         bg.set(1, T0 + 3 * HOUR, T0 + 2 * HOUR, "protons", "HET")
     assert bg.own_windows() == []
 
@@ -239,7 +240,7 @@ def test_set_default_changes_only_the_default_windows():
 
 def test_set_default_outside_the_data_range():
     bg = BackgroundWindows(ranges(1), default=DEFAULT)
-    with pytest.raises(ValueError, match="The background window of Event 1: the times must be in the order"):
+    with pytest.raises(ValueError, match="The background window of event 1 is not valid: the times must be in the order"):
         bg.set_default(HOUR, 40 * HOUR)
     assert bg.default == DEFAULT
     assert bg.window(1)[:2] == (T0, T0 + 2 * HOUR)
@@ -249,7 +250,8 @@ def test_set_end_time_after_all_the_windows():
     bg = BackgroundWindows(ranges(1), windows({(1, "protons", "HET"): (T0, T0 + 10 * HOUR)}), DEFAULT)
     bg.set_end_time(1, T0 + 11 * HOUR)
     assert bg.ranges.loc[1, "End Time"] == T0 + 11 * HOUR
-    with pytest.raises(ValueError, match="The background window of Event 1, protons HET: the times must be"):
+    message = r"The end time of event 1 is not valid \(the background window of event 1, protons HET\): the times"
+    with pytest.raises(ValueError, match=message):
         bg.set_end_time(1, T0 + 9 * HOUR)
     assert bg.ranges.loc[1, "End Time"] == T0 + 11 * HOUR
 
@@ -266,10 +268,10 @@ def test_check_names_writes_them_as_given():
 
 
 @pytest.mark.parametrize("key, message", [
-    ((1, "ions", "HET"), "Event 1, ions HET of the event list: there is no ions HET. The particles and their sensors "
+    ((1, "ions", "HET"), "The background window of event 1, ions HET: there is no ions HET. The particles and their sensors "
                          "are: electrons: HET; protons: HET, EPT."),
     ((1, "protons", "STEP"), "there is no protons STEP."),
-    ((1, "ions", ""), "Event 1, ions of the event list: there is no ions. The particles"),
+    ((1, "ions", ""), "The background window of event 1, ions: there is no ions. The particles"),
 ])
 def test_check_names_of_unknown_particles_and_sensors(key, message):
     bg = BackgroundWindows(ranges(1), windows({key: (T0, T0 + 3 * HOUR)}))
@@ -280,7 +282,7 @@ def test_check_names_of_unknown_particles_and_sensors(key, message):
 def test_check_names_of_the_same_particle_and_sensor_twice():
     bg = BackgroundWindows(ranges(1), windows({(1, "protons", "HET"): (T0, T0 + 3 * HOUR),
                                                (1, "Protons", "HET"): (T0, T0 + 4 * HOUR)}))
-    with pytest.raises(ValueError, match="Event 1, protons HET has more than one background window"):
+    with pytest.raises(ValueError, match="There is more than one background window of event 1, protons HET"):
         bg.check_names({"protons": ["HET"]})
 
 

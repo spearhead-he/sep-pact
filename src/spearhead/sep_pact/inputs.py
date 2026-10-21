@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 
-from .background import KEY_COLUMNS, order_error, split_event_rows
+from .background import KEY_COLUMNS, WINDOW_INDEX, BackgroundWindows, order_error, split_event_rows
 from .conf import SEPPACT_parameters
 
 
@@ -77,11 +77,6 @@ def read_event_list(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     return df_event_times.dropna(how="all"), df_windows
 
 
-def _read_event_times(path: str) -> pd.DataFrame:
-    """Returns the times of the events of the CSV event list, indexed by Event No, with the columns of its layout"""
-    return read_event_list(path)[0]
-
-
 def _date_range_events(date_ranges: list) -> pd.DataFrame:
     """Returns the times of the events of date_ranges [(start, end)], numbered from 1"""
     if not date_ranges:
@@ -139,16 +134,43 @@ def read_events(path: str, params: SEPPACT_parameters) -> pd.DataFrame:
     """Returns the events of the CSV event list, with all their times and their period of data (see complete_events())
 
     The first column is the event number, then the columns of one of EVENT_LIST_LAYOUTS: Reference Time, or Start
-    Time and End Time with optionally BG End or BG Start and BG End.
+    Time and End Time with optionally BG End or BG Start and BG End; optionally Particle and Sensor, for the rows of
+    the background windows of particles and sensors.
     """
-    return complete_events(_read_event_times(path), params, f"the event list {path}")
+    return complete_events(read_event_list(path)[0], params, f"the event list {path}")
+
+
+def make_bg_windows(events: pd.DataFrame, own_windows: pd.DataFrame, params: SEPPACT_parameters) -> BackgroundWindows:
+    """Returns the background windows of the events (of complete_events()), with the windows of their particles and
+    sensors (of read_event_list())"""
+    listed = events[events["BG Window Source"] == "event list"]
+    event_windows = listed[["BG Start", "BG End"]].set_axis(
+        pd.MultiIndex.from_tuples([(event_no, "", "") for event_no in listed.index], names=WINDOW_INDEX))
+    windows = pd.concat([event_windows, own_windows]) if len(own_windows) else event_windows
+    bg_windows = BackgroundWindows(events[["Start Time", "End Time"]], windows,
+                                   (params.bg_start_after_start, params.bg_end_after_start))
+    bg_windows.check_names({particle: list(params.SENSORS) for particle in params.PARTICLES})
+    return bg_windows
+
+
+def load_events(params: SEPPACT_parameters) -> tuple[pd.DataFrame, BackgroundWindows]:
+    """Returns the events of the event list file_events, or of date_ranges if file_events is empty (see
+    complete_events()), and their background windows, with those of their particles and sensors"""
+    if not params.file_events:
+        events = complete_events(_date_range_events(params.date_ranges), params, "the date ranges")
+        return events, make_bg_windows(events, pd.DataFrame(), params)
+    path = params.file_events
+    event_times, own_windows = read_event_list(path)
+    events = complete_events(event_times, params, f"the event list {path}")
+    try:
+        return events, make_bg_windows(events, own_windows, params)
+    except ValueError as error:
+        raise ValueError(f"The event list {path}: {error}") from None
 
 
 def make_events(params: SEPPACT_parameters) -> pd.DataFrame:
     """Returns the events of the event list file_events, or of date_ranges if file_events is empty"""
-    if params.file_events:
-        return read_events(params.file_events, params)
-    return complete_events(_date_range_events(params.date_ranges), params, "the date ranges")
+    return load_events(params)[0]
 
 
 # the columns of the file of onset corrections

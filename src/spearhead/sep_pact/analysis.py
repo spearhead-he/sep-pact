@@ -6,9 +6,10 @@ from os.path import join as pjoin
 import numpy as np
 import pandas as pd
 
+from .background import BGWindow, key_label, window_points
 from .conf import SEPPACT_parameters
 from .data import channel_layout, download_data, load_energies, resample_flux
-from .inputs import CORRECTION_COLUMNS, make_events, read_corrections, read_shocks, window_order_error
+from .inputs import CORRECTION_COLUMNS, load_events, read_corrections, read_shocks
 
 
 # the index of df_series, one row per series, and of df_results, one row per channel group of an event
@@ -326,12 +327,14 @@ class SEPPACT:
     """Onset time, peak flux and fluence of the events of an event list
 
     Run the steps in order: run_inputs(), run_data(), run_onsets(), run_spikes(), run_peaks(), run_fluences(),
-    then plot_events() and save_results(). Background windows and end times can be changed with set_bg_window() and
-    set_end_time() after run_data(), before the onsets. After the onsets, set_onset() replaces the chosen onset of a
+    then plot_events() and save_results(). Background windows (of an event, or of a particle, or a particle and sensor
+    in it) and end times can be changed with set_bg_window() and set_end_time() after run_data(), before the onsets.
+    After the onsets, set_onset() replaces the chosen onset of a
     channel group by another detected one, or by no onset (corrections, applied again when the steps run again, and
     saved by save_corrections()). The results stay available as attributes:
-    - events: the event list, with the windows filled in and where the background window and the end time come from
-      (BG Window Source, End Time Source)
+    - events: the event list, one row per event, with the times filled in, the background window of the event, and
+      where the window and the end time come from (BG Window Source, End Time Source)
+    - bg_windows: the background windows of the events and of their particles and sensors (see bg_window())
     - shocktimes: the times of the shocks
     - dfs_flux: the flux of the channel groups, per particle, sensor and resolution
     - df_series: the onset, data quality, peak flux and fluence of every series, one row per event, particle, sensor,
@@ -349,7 +352,8 @@ class SEPPACT:
         self.reference_channel = self.params.reference_channel
         self.shocktimes = None
         self.events = None
-        self._input_windows = None
+        self.bg_windows = None
+        self._input_end_times = None
         self.energies = None
         self.dfs_flux = None
         self.df_series = None
@@ -452,9 +456,9 @@ class SEPPACT:
         """Reads the shock list and the events (the event list, or the date ranges without one)"""
         p = self.params
         self.shocktimes = read_shocks(p.file_shocks)
-        self.events = make_events(p)
+        self.events, self.bg_windows = load_events(p)
         self.corrections, self._correction_times = read_corrections(p.file_corrections) if p.file_corrections else ({}, {})
-        self._input_windows = self.events[["BG Start", "BG End", "BG Window Source", "End Time", "End Time Source"]].copy()
+        self._input_end_times = self.events[["End Time", "End Time Source"]].copy()
 
     def run_data(self, redownload: bool = False) -> None:
         """Loads the flux of the channel groups (from the cache, or downloads it), and resamples it"""
@@ -477,59 +481,97 @@ class SEPPACT:
                                  redownload=redownload)
         self.dfs_flux = resample_flux(dfs_flux, p.resample_freqs)
 
-    def set_bg_window(self, event_no: int, start, end) -> None:
-        """Sets the background window of an event (BG Window Source "set"), used instead of the one of the event list or the
-        default one; run the onsets and the next steps again afterwards"""
-        row = self.events.loc[event_no].copy()
-        row["BG Start"], row["BG End"] = pd.Timestamp(start), pd.Timestamp(end)
-        if error := window_order_error(row):
-            raise ValueError(f"The background window of event {event_no} is not valid: {error}")
-        self.events.loc[event_no, ["BG Start", "BG End", "BG Window Source"]] = [row["BG Start"], row["BG End"], "set"]
+    def bg_window(self, event_no: int, particle: str = "", sensor: str = "") -> BGWindow:
+        """Returns the background window of the series of a particle and sensor in an event, (start, end, source,
+        particle, sensor): the window of the particle and sensor, else of the particle, else of the event (particle and
+        sensor "" in the result); without a particle, the window of the event"""
+        return self.bg_windows.window(event_no, particle, sensor)
 
-    def reset_bg_window(self, event_no: int) -> None:
-        """Sets the background window of an event back to the one of the event list or the default one"""
-        columns = ["BG Start", "BG End", "BG Window Source"]
-        self.events.loc[event_no, columns] = self._input_windows.loc[event_no, columns]
+    def _check_series_names(self, particle: str, sensor: str) -> None:
+        """Raises an error if the particle, or the particle and sensor, are not of the channel groups"""
+        if particle and (particle not in self.particles or (sensor and sensor not in self.sensors[particle])):
+            pairs = "; ".join(f"{p}: {', '.join(sorted(self.sensors[p]))}" for p in self.particles)
+            raise ValueError(f"There are no channel groups of {particle} {sensor}".rstrip()
+                             + f". The particles and their sensors are: {pairs}.")
+
+    def _update_event_window(self, event_no: int) -> None:
+        """Writes the background window of the event in events"""
+        window = self.bg_window(event_no)
+        self.events.loc[event_no, ["BG Start", "BG End", "BG Window Source"]] = [window.start, window.end, window.source]
+
+    def set_bg_window(self, event_no: int, start, end, particle: str = "", sensor: str = "") -> None:
+        """Sets the background window of an event, or of a particle, or a particle and sensor, in it (source "set"),
+        used instead of the one of the event list or the default one; run the onsets and the next steps again
+        afterwards"""
+        self._check_series_names(particle, sensor)
+        self.bg_windows.set(event_no, start, end, particle, sensor)
+        self._update_event_window(event_no)
+
+    def reset_bg_window(self, event_no: int, particle: str = "", sensor: str = "") -> None:
+        """Sets the background window of an event back to the one of the event list or the default one; the window of
+        a particle (and sensor) back to the one of the event list, or else to the window of the event"""
+        self._check_series_names(particle, sensor)
+        self.bg_windows.reset(event_no, particle, sensor)
+        self._update_event_window(event_no)
+
+    def _set_end(self, event_no: int, end, source: str) -> None:
+        """Sets the end time of an event, after all its background windows and within its data (up to Plot End)"""
+        end = pd.Timestamp(end)
+        self.bg_windows.set_end_time(event_no, end)
+        self.events.loc[event_no, ["End Time", "End Time Source"]] = [end, source]
 
     def set_end_time(self, event_no: int, end) -> None:
         """Sets the end time of an event (End Time Source "set"), within its data (up to Plot End); run the onsets and the
         next steps again afterwards"""
-        row = self.events.loc[event_no].copy()
-        row["End Time"] = pd.Timestamp(end)
-        if error := window_order_error(row):
-            raise ValueError(f"The end time of event {event_no} is not valid: {error}")
-        if row["End Time"] > row["Plot End"]:
-            raise ValueError(f"The end time of event {event_no} ({row['End Time']}) is after the end of its data "
-                             f"({row['Plot End']}). To extend it, change the event list and run the data step again.")
-        self.events.loc[event_no, ["End Time", "End Time Source"]] = [row["End Time"], "set"]
+        if pd.Timestamp(end) > self.events.loc[event_no, "Plot End"]:
+            raise ValueError(f"The end time of event {event_no} ({pd.Timestamp(end)}) is after the end of its data "
+                             f"({self.events.loc[event_no, 'Plot End']}). To extend it, change the event list and run "
+                             "the data step again.")
+        self._set_end(event_no, end, "set")
 
     def reset_end_time(self, event_no: int) -> None:
         """Sets the end time of an event back to the one of the event list or the default one"""
-        columns = ["End Time", "End Time Source"]
-        self.events.loc[event_no, columns] = self._input_windows.loc[event_no, columns]
+        self._set_end(event_no, *self._input_end_times.loc[event_no, ["End Time", "End Time Source"]])
 
-    def bg_window_points(self, event_no: int) -> dict:
-        """Returns {resolution: points} of the background window of an event: the fewest points with data in the
-        window among the series of the event at each resolution"""
-        bg_start, bg_end = self.events.loc[event_no, ["BG Start", "BG End"]]
+    def _series_pairs(self, particle: str = "", sensor: str = "") -> list[tuple]:
+        """Returns the (particle, sensor) of the channel groups, of all of them or of a particle (and sensor)"""
+        return [(p, s) for p in self.particles for s in sorted(self.sensors[p])
+                if (not particle or p == particle) and (not sensor or s == sensor)]
+
+    def bg_window_points(self, event_no: int, particle: str = "", sensor: str = "") -> dict:
+        """Returns {resolution: points} of the background windows of an event: the fewest points with data in the
+        window of each series, among the series of the event, or of a particle (and sensor), at each resolution"""
         points = {}
         for resample_freq in self.params.resample_freqs:
-            counts = [self.dfs_flux[particle][sensor][resample_freq].loc[event_no].loc[bg_start:bg_end].notna().sum().min()
-                      for particle in self.particles for sensor in self.sensors[particle]]
-            points[resample_freq] = int(min(counts))
+            points[resample_freq] = min(window_points(self.dfs_flux[p][s][resample_freq].loc[event_no],
+                                                      *self.bg_window(event_no, p, s)[:2])
+                                        for p, s in self._series_pairs(particle, sensor))
         return points
 
     def bg_window_warnings(self, event_no: int) -> list[str]:
-        """Returns a warning for each resolution at which the background window of an event has fewer than
-        MIN_BG_POINTS points in a series"""
-        return [f"The background window of event {event_no} has {points} point{'s' if points != 1 else ''} at the "
-                f"{resample_freq.total_seconds() / 60:g} min resolution in a series (fewer than {MIN_BG_POINTS})."
-                for resample_freq, points in self.bg_window_points(event_no).items() if points < MIN_BG_POINTS]
+        """Returns a warning for each background window of an event, and each resolution, at which a series has fewer
+        than MIN_BG_POINTS points in it"""
+        users = {}
+        for p, s in self._series_pairs():
+            window = self.bg_window(event_no, p, s)
+            users.setdefault((window.particle, window.sensor), []).append((p, s))
+        warnings = []
+        for key, pairs in users.items():
+            counts = [self.bg_window_points(event_no, p, s) for p, s in pairs]
+            for resample_freq in self.params.resample_freqs:
+                points = min(count[resample_freq] for count in counts)
+                if points < MIN_BG_POINTS:
+                    warnings.append(f"The background window of {key_label(event_no, *key)} has {points} "
+                                    f"point{'s' if points != 1 else ''} at the {resample_freq.total_seconds() / 60:g} "
+                                    f"min resolution in a series (fewer than {MIN_BG_POINTS}).")
+        return warnings
 
     def save_events(self, path: str) -> None:
-        """Writes the events with their windows and end times (Event No, Start Time, BG Start, BG End, End Time) as a CSV
-        event list, which can be given as file_events to use the same times again"""
-        self.events[["Start Time", "BG Start", "BG End", "End Time"]].to_csv(path, date_format="%Y-%m-%d %H:%M:%S")
+        """Writes the events with their times and background windows as a CSV event list (Event No, Start Time, BG
+        Start, BG End, End Time, and Particle and Sensor if there are windows of particles and sensors), which can be
+        given as file_events to use the same times again"""
+        rows = self.bg_windows.event_list(self.events[["Start Time", "End Time"]])
+        rows.to_csv(path, date_format="%Y-%m-%d %H:%M:%S")
 
     def run_onsets(self) -> None:
         """Detects the onsets of every resolution and viewing, and chooses one per event and channel group"""
@@ -543,11 +585,12 @@ class SEPPACT:
         rows = []
         for event_no, particle, sensor, mevlbl, resample_freq, viewing in self._iter_series_keys():
             flux = self._flux(event_no, particle, sensor, mevlbl, resample_freq, viewing)
+            window = self.bg_window(event_no, particle, sensor)
             onset_time, _, _, levels = onset_detection_sigma(flux.loc[:self.events.loc[event_no, "End Time"]],
                                                              s=p.onset_sigma,
                                                              n=p.onset_points,
-                                                             bg_start=self.events.loc[event_no, "BG Start"],
-                                                             bg_end=self.events.loc[event_no, "BG End"])
+                                                             bg_start=window.start,
+                                                             bg_end=window.end)
             rows.append({"Onset Time": onset_time, "BG Level": levels["bg_level"], "Threshold": levels["threshold"]})
         index = pd.MultiIndex.from_tuples(list(self._iter_series_keys()), names=SERIES_INDEX)
         self.df_series = pd.DataFrame(rows, index=index)
@@ -606,7 +649,7 @@ class SEPPACT:
             for (key, rows), reference in zip(channel_rows, is_reference):
                 if reference != reference_first:
                     continue
-                bg_end = self.events.loc[key[0], "BG End"]
+                bg_end = self.bg_window(*key[:3]).end
                 if key in self.corrections:
                     chosen[key] = corrected_onset(rows, self.corrections[key], bg_end)
                 else:
@@ -817,16 +860,19 @@ class SEPPACT:
 
     def results_table(self) -> pd.DataFrame:
         """Returns df_results as the table of results.csv: one row per event and channel group, with the energy range
-        of the group, where the background window and the end time of the event come from (BG Window Source, End Time
-        Source), and the resolutions in minutes"""
+        of the group, the background window of its series (BG Start, BG End), where it and the end time of the event
+        come from (BG Window Source, End Time Source), and the resolutions in minutes"""
         table = self.df_results[RESULT_COLUMNS].reset_index()
         channels = zip(table["Particle"], table["Sensor"], table["Energy Label"])
         energies = [self.group_energies(*channel) for channel in channels]
         table.insert(4, "Low Energy", [low for low, _ in energies])
         table.insert(5, "High Energy", [high for _, high in energies])
-        for i, column in enumerate(("BG Window Source", "End Time Source"), start=1):
-            table.insert(table.columns.get_loc("Onset Corrected") + i, column,
-                         self.events.loc[table["Event No"], column].values)
+        windows = [self.bg_window(*key) for key in zip(table["Event No"], table["Particle"], table["Sensor"])]
+        columns = {"BG Start": [window.start for window in windows], "BG End": [window.end for window in windows],
+                   "BG Window Source": [window.source for window in windows],
+                   "End Time Source": self.events.loc[table["Event No"], "End Time Source"].values}
+        for i, (column, values) in enumerate(columns.items(), start=1):
+            table.insert(table.columns.get_loc("Onset Corrected") + i, column, values)
         for column in ("Onset Resolution", "Peak Flux Resolution", "Fluence Resolution"):
             table[column] = pd.to_timedelta(table[column]).dt.total_seconds() / 60
         return table

@@ -1,4 +1,5 @@
-"""Tests of the background windows: their source, setting and resetting them, their points, and save_events()"""
+"""Tests of the event times: the background windows of the events and of their particles and sensors, and the end
+times; their source, setting and resetting them, their points, their effect on the analysis, and save_events()"""
 from datetime import timedelta
 
 import pandas as pd
@@ -169,3 +170,117 @@ def test_save_events_keeps_the_end_time(tool, tmp_path):
     events = read_events(path, tool.params)
     assert events.loc[1, "End Time"] == pd.Timestamp(T0 + 47 * HOUR)
     assert list(events.loc[1, ["BG Window Source", "End Time Source"]]) == ["event list", "event list"]
+
+
+def write_event_rows(path, rows: str) -> str:
+    """Writes an event list with the columns Event No, Particle, Sensor, Start Time, BG Start, BG End, End Time"""
+    path.write_text("Event No,Particle,Sensor,Start Time,BG Start,BG End,End Time\n" + rows)
+    return str(path)
+
+
+OWN = (pd.Timestamp(T0 - HOUR), pd.Timestamp(T0 - 20 * MINUTE))
+
+
+def test_bg_window_of_a_particle_replaces_the_one_of_the_event(tool):
+    # a window that ends after the rise of the flux at T0: the onsets of the protons are later
+    late = (T0 - HOUR, T0 + 30 * MINUTE)
+    tool.set_bg_window(1, *late, "protons", "HET")
+    tool.run_onsets()
+    mixed = tool.df_series.copy()
+    # the same as the onsets of the event window, for the electrons, and of the window of the protons, for them
+    tool.reset_bg_window(1, "protons", "HET")
+    tool.run_onsets()
+    event_window = tool.df_series.copy()
+    tool.set_bg_window(1, *late)
+    tool.run_onsets()
+    own_window = tool.df_series.copy()
+    protons = mixed.index.get_level_values("Particle") == "protons"
+    pd.testing.assert_frame_equal(mixed[~protons], event_window[~protons])
+    # protons without an onset of their own copy the onset of the reference channel, found in the window of the event
+    copied = mixed["Onset Copied"].to_numpy()
+    pd.testing.assert_frame_equal(mixed[protons & ~copied], own_window[protons & ~copied])
+    assert copied.any() and own_window.loc[protons & copied, "Onset Time"].isna().all()
+    assert (mixed.loc[protons & ~copied, "Onset Time"] >= pd.Timestamp(T0 + 30 * MINUTE)).all()
+    assert (event_window.loc[protons, "Onset Time"] <= pd.Timestamp(T0)).all()
+
+
+def test_results_table_has_the_window_of_each_series(tool):
+    tool.set_bg_window(1, *OWN, "protons")
+    for step in (tool.run_onsets, tool.run_spikes, tool.run_peaks, tool.run_fluences):
+        step()
+    table = tool.results_table()
+    protons = table["Particle"] == "protons"
+    assert (table.loc[protons, "BG End"] == OWN[1]).all() and (table.loc[protons, "BG Window Source"] == "set").all()
+    assert (table.loc[~protons, "BG End"] == tool.events.loc[1, "BG End"]).all()
+    assert (table.loc[~protons, "BG Window Source"] == "default").all()
+
+
+def test_set_and_reset_bg_window_of_a_particle_and_sensor(tool):
+    event = window(tool)
+    tool.set_bg_window(1, *OWN, "protons", "HET")
+    assert tool.bg_window(1, "protons", "HET") == (*OWN, "set", "protons", "HET")
+    assert tool.bg_window(1, "electrons", "HET")[2:] == ("default", "", "")
+    # the window of the event in events is not changed
+    assert window(tool) == event
+    tool.reset_bg_window(1, "protons", "HET")
+    assert tool.bg_window(1, "protons", "HET") == (event[0], event[1], "default", "", "")
+
+
+@pytest.mark.parametrize("particle, sensor, message", [
+    ("ions", "", "There are no channel groups of ions. The particles and their sensors are: electrons: HET; protons: HET."),
+    ("protons", "EPT", "There are no channel groups of protons EPT."),
+])
+def test_set_bg_window_of_unknown_channel_groups(tool, particle, sensor, message):
+    with pytest.raises(ValueError, match=message):
+        tool.set_bg_window(1, *OWN, particle, sensor)
+
+
+def test_bg_window_points_and_warnings_of_a_particle(tool):
+    tool.set_bg_window(1, T0 - HOUR, T0 - 40 * MINUTE, "protons", "HET")
+    assert tool.bg_window_points(1, "protons")[timedelta(minutes=30)] == 1
+    assert tool.bg_window_points(1, "electrons")[timedelta(minutes=30)] == 4
+    assert tool.bg_window_points(1)[timedelta(minutes=30)] == 1
+    assert tool.bg_window_warnings(1) == [
+        "The background window of event 1, protons HET has 1 point at the 30 min resolution in a series (fewer than 3)."]
+
+
+def test_set_end_time_before_the_window_of_a_particle(tool):
+    tool.set_bg_window(1, T0, T0 + 10 * HOUR, "protons", "HET")
+    with pytest.raises(ValueError, match=r"The end time of event 1 is not valid \(the background window of event 1, "
+                                         r"protons HET\): the times must be in the order"):
+        tool.set_end_time(1, T0 + 9 * HOUR)
+    assert end_time(tool)[1] == "default"
+
+
+def test_save_events_with_the_windows_of_particles_and_sensors(tool, tmp_path):
+    tool.set_bg_window(1, *OWN, "protons", "HET")
+    tool.set_end_time(1, T0 + 47 * HOUR)
+    path = str(tmp_path / "saved.csv")
+    tool.save_events(path)
+    saved = pd.read_csv(path)
+    assert saved.columns.tolist() == ["Event No", "Particle", "Sensor", "Start Time", "BG Start", "BG End", "End Time"]
+    assert saved["Particle"].fillna("").tolist() == ["", "protons"]
+    tool.params.file_events = path
+    tool.run_inputs()
+    assert tool.bg_window(1, "protons", "HET") == (*OWN, "event list", "protons", "HET")
+    assert list(tool.events.loc[1, ["BG Window Source", "End Time", "End Time Source"]]) == \
+        ["event list", pd.Timestamp(T0 + 47 * HOUR), "event list"]
+
+
+def test_event_list_with_the_windows_of_particles_and_sensors(tool, tmp_path):
+    tool.params.file_events = write_event_rows(tmp_path / "events.csv",
+                                               "1,,,2021-01-01 10:00,,2021-01-01 11:00,2021-01-03 12:00\n"
+                                               "1,Protons,het,,2021-01-01 11:00,2021-01-01 11:40,\n")
+    tool.run_inputs()
+    assert tool.bg_window(1, "protons", "HET") == (*OWN, "event list", "protons", "HET")
+    assert tool.bg_window(1, "electrons", "HET")[:3] == (pd.Timestamp(T0 - 2 * HOUR), pd.Timestamp(T0 - HOUR),
+                                                         "event list")
+
+
+def test_event_list_with_the_window_of_an_unknown_particle(tool, tmp_path):
+    tool.params.file_events = write_event_rows(tmp_path / "events.csv",
+                                               "1,,,2021-01-01 10:00,,2021-01-01 11:00,2021-01-03 12:00\n"
+                                               "1,ions,HET,,,2021-01-01 11:40,\n")
+    with pytest.raises(ValueError, match="The event list .*: The background window of event 1, ions HET: there is no "
+                                         "ions HET. The particles and their sensors are: electrons: HET; protons: HET."):
+        tool.run_inputs()

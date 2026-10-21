@@ -23,8 +23,8 @@ BGWindow = namedtuple("BGWindow", ["start", "end", "source", "particle", "sensor
 
 
 def key_label(event_no, particle: str = "", sensor: str = "") -> str:
-    """Returns "Event 2", "Event 2, protons" or "Event 2, protons HET\""""
-    return f"Event {event_no}" + (f", {particle}" if particle else "") + (f" {sensor}" if sensor else "")
+    """Returns "event 2", "event 2, protons" or "event 2, protons HET\""""
+    return f"event {event_no}" + (f", {particle}" if particle else "") + (f" {sensor}" if sensor else "")
 
 
 def order_error(start_time, bg_start, bg_end, end_time) -> str | None:
@@ -44,7 +44,8 @@ def _last_values(rows: pd.DataFrame, label: str) -> tuple[dict, list[str]]:
         values[column] = given.iloc[-1] if len(given) else None
         if given.nunique() > 1:
             lines = ", ".join(f"{value} in line {line}" for line, value in given.items())
-            messages.append(f"{label}: {column} is given {len(given)} times ({lines}); the last one is used.")
+            messages.append(f"{label[0].upper()}{label[1:]}: {column} is given {len(given)} times ({lines}); the last "
+                            "one is used.")
     return values, messages
 
 
@@ -67,16 +68,17 @@ def split_event_rows(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, list
     times, windows, messages = {}, {}, []
     for event_no, rows in df.groupby("Event No", sort=False):
         is_event_row = rows["Particle"] == ""
-        values, event_messages = _last_values(rows.loc[:, time_columns], key_label(event_no))
-        window, window_messages = _last_values(rows.loc[is_event_row, window_columns], key_label(event_no))
+        label = key_label(event_no)
+        values, event_messages = _last_values(rows.loc[:, time_columns], label)
+        window, window_messages = _last_values(rows.loc[is_event_row, window_columns], label)
         times[event_no] = {**values, **window}
         messages += event_messages + window_messages
         for (particle, sensor), key_rows in rows[~is_event_row].groupby(KEY_COLUMNS, sort=False):
             label = key_label(event_no, particle, sensor)
             window, window_messages = _last_values(key_rows[window_columns], label)
             if window.get("BG End") is None:
-                raise ValueError(f"{label} of the event list has no BG End: the rows of a particle or sensor give its "
-                                 "background window (BG End, and BG Start or else the Start Time of the event).")
+                raise ValueError(f"The row of {label} in the event list has no BG End: the rows of a particle or sensor "
+                                 "give its background window (BG End, and BG Start or else the Start Time of the event).")
             windows[(event_no, particle, sensor)] = window
             messages += window_messages
     df_times = pd.DataFrame.from_dict(times, orient="index", columns=time_columns + window_columns)
@@ -129,12 +131,11 @@ class BackgroundWindows:
         return pd.DataFrame({"BG Start": starts + pd.Timedelta(self.default[0]),
                              "BG End": starts + pd.Timedelta(self.default[1]), "Source": "default"}, index=index)
 
-    def _check(self, key: tuple, bg_start, bg_end, start_time=None, end_time=None) -> None:
+    def _check(self, key: tuple, bg_start, bg_end) -> None:
         """Raises an error if the window of the key is not in the data range of its event"""
-        start_time = self.ranges.loc[key[0], "Start Time"] if start_time is None else start_time
-        end_time = self.ranges.loc[key[0], "End Time"] if end_time is None else end_time
+        start_time, end_time = self.ranges.loc[key[0], ["Start Time", "End Time"]]
         if error := order_error(start_time, bg_start, bg_end, end_time):
-            raise ValueError(f"The background window of {key_label(*key)}: {error}")
+            raise ValueError(f"The background window of {key_label(*key)} is not valid: {error}")
 
     @staticmethod
     def _key(event_no, particle: str, sensor: str) -> tuple:
@@ -188,7 +189,10 @@ class BackgroundWindows:
         """Sets the End Time of the event, after all its windows"""
         end = pd.Timestamp(end)
         for key in self._table.index[self._table.index.get_level_values("Event No") == event_no]:
-            self._check(key, *self._table.loc[key, WINDOW_COLUMNS], end_time=end)
+            window = self._table.loc[key, WINDOW_COLUMNS]
+            if error := order_error(self.ranges.loc[event_no, "Start Time"], *window, end):
+                of = f" (the background window of {key_label(*key)})" if key[1] else ""
+                raise ValueError(f"The end time of event {event_no} is not valid{of}: {error}")
         self.ranges.loc[event_no, "End Time"] = end
 
     def check_names(self, names: dict) -> None:
@@ -202,14 +206,14 @@ class BackgroundWindows:
             sensor = sensors.get(key[2].lower()) if key[2] else ""
             if particle is None or sensor is None:
                 accepted = "; ".join(f"{particle}: {', '.join(sensors)}" for particle, sensors in names.items())
-                raise ValueError(f"{key_label(*key)} of the event list: there is no {key[1]} {key[2]}".rstrip()
+                raise ValueError(f"The background window of {key_label(*key)}: there is no {key[1]} {key[2]}".rstrip()
                                  + f". The particles and their sensors are: {accepted}.")
             renamed[key] = (key[0], particle, sensor)
         for table in (self._table, self._input):
             table.index = pd.MultiIndex.from_tuples([renamed.get(key, key) for key in table.index], names=WINDOW_INDEX)
         if self._table.index.has_duplicates:
             duplicate = self._table.index[self._table.index.duplicated()][0]
-            raise ValueError(f"{key_label(*duplicate)} has more than one background window in the event list.")
+            raise ValueError(f"There is more than one background window of {key_label(*duplicate)}.")
 
     def to_frame(self) -> pd.DataFrame:
         """Returns all the windows (BG Start, BG End, Source), indexed by Event No, Particle and Sensor, the window of
