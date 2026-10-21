@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 
+from .background import KEY_COLUMNS, WINDOW_INDEX, BackgroundWindows, order_error, split_event_rows
 from .conf import SEPPACT_parameters
 
 
@@ -32,12 +33,13 @@ EVENT_COLUMNS = ["Start Time", "BG Start", "BG End", "End Time", "Reference Time
 
 
 def event_list_layout(path: str, columns) -> str:
-    """Returns the layout of the event list with these columns (after Event No), or raises an error that lists the
-    accepted ones"""
+    """Returns the layout of the event list with these columns (after Event No, without Particle and Sensor), or raises
+    an error that lists the accepted ones"""
     for layout, layout_columns in EVENT_LIST_LAYOUTS.items():
         if set(columns) == set(layout_columns):
             return layout
     accepted = "\n".join(f"    Event No, {', '.join(layout_columns)}" for layout_columns in EVENT_LIST_LAYOUTS.values())
+    accepted += "\nwith optionally Particle and Sensor, for the rows of the background windows of particles and sensors"
     hint = ""
     if "Onset Time" in columns:
         hint = ("\nThe Onset Time of former event lists is the Reference Time; an event list with Onset Time, BG Start "
@@ -45,19 +47,34 @@ def event_list_layout(path: str, columns) -> str:
     raise ValueError(f"The event list {path} has the columns {', '.join(columns)}. Accepted columns:\n{accepted}{hint}")
 
 
-def _read_event_times(path: str) -> pd.DataFrame:
-    """Returns the times of the CSV event list, indexed by Event No, with the columns of its layout"""
+def read_event_list(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Returns the times of the events of the CSV event list (indexed by Event No, with the columns of its layout), and
+    the background windows of its particles and sensors (see background.split_event_rows()); prints a message for each
+    time given more than once in the rows of an event, of which the last one is used"""
     if not path.lower().endswith(".csv"):
         raise ValueError(f"The event list {path} is not a CSV file. Event lists in Excel or other formats are not "
                          f"accepted; save it as CSV.")
-    df_event_times = pd.read_csv(path, header=0, index_col=0, skipinitialspace=True)
-    df_event_times.columns = df_event_times.columns.str.strip()
-    df_event_times.index.name = "Event No"
-    df_event_times = df_event_times.dropna(how="all")
-    event_list_layout(path, list(df_event_times.columns))
-    for column in df_event_times.columns:
-        df_event_times[column] = pd.to_datetime(df_event_times[column], format="ISO8601").astype("datetime64[ns]")
-    return df_event_times
+    df = pd.read_csv(path, header=0, skipinitialspace=True, skip_blank_lines=False, dtype={"Particle": str, "Sensor": str})
+    df.columns = df.columns.str.strip()
+    df = df.rename(columns={df.columns[0]: "Event No"}).set_axis(range(2, len(df) + 2)).dropna(how="all")
+    event_list_layout(path, [column for column in df.columns[1:] if column not in KEY_COLUMNS])
+    if len(no_number := df[df["Event No"].isna()]):
+        raise ValueError(f"Line {no_number.index[0]} of the event list {path} has no Event No.")
+    df["Event No"] = df["Event No"].astype(int)
+    for column in df.columns[1:]:
+        if column in KEY_COLUMNS:
+            continue
+        # parsed before the rows of an event are compared
+        df[column] = pd.to_datetime(df[column], format="ISO8601").astype("datetime64[ns]")
+    for column in KEY_COLUMNS:
+        if column not in df.columns:
+            df[column] = ""
+    df_event_times, df_windows, messages = split_event_rows(df)
+    for message in messages:
+        print(f"The event list {path}: {message}")
+    df_event_times = df_event_times.astype("datetime64[ns]")
+    # the events without any time (e.g. a row with only its number)
+    return df_event_times.dropna(how="all"), df_windows
 
 
 def _date_range_events(date_ranges: list) -> pd.DataFrame:
@@ -70,10 +87,7 @@ def _date_range_events(date_ranges: list) -> pd.DataFrame:
 
 def window_order_error(row: pd.Series) -> str | None:
     """Returns why the times of an event are not in the order Start Time <= BG Start < BG End < End Time, or None"""
-    if row["Start Time"] <= row["BG Start"] < row["BG End"] < row["End Time"]:
-        return None
-    return (f"the times must be in the order Start Time <= BG Start < BG End < End Time, not {row['Start Time']}, "
-            f"{row['BG Start']}, {row['BG End']}, {row['End Time']}.")
+    return order_error(row["Start Time"], row["BG Start"], row["BG End"], row["End Time"])
 
 
 def _check_event_windows(events: pd.DataFrame, source: str) -> None:
@@ -120,16 +134,43 @@ def read_events(path: str, params: SEPPACT_parameters) -> pd.DataFrame:
     """Returns the events of the CSV event list, with all their times and their period of data (see complete_events())
 
     The first column is the event number, then the columns of one of EVENT_LIST_LAYOUTS: Reference Time, or Start
-    Time and End Time with optionally BG End or BG Start and BG End.
+    Time and End Time with optionally BG End or BG Start and BG End; optionally Particle and Sensor, for the rows of
+    the background windows of particles and sensors.
     """
-    return complete_events(_read_event_times(path), params, f"the event list {path}")
+    return complete_events(read_event_list(path)[0], params, f"the event list {path}")
+
+
+def make_bg_windows(events: pd.DataFrame, own_windows: pd.DataFrame, params: SEPPACT_parameters) -> BackgroundWindows:
+    """Returns the background windows of the events (of complete_events()), with the windows of their particles and
+    sensors (of read_event_list())"""
+    listed = events[events["BG Window Source"] == "event list"]
+    event_windows = listed[["BG Start", "BG End"]].set_axis(
+        pd.MultiIndex.from_tuples([(event_no, "", "") for event_no in listed.index], names=WINDOW_INDEX))
+    windows = pd.concat([event_windows, own_windows]) if len(own_windows) else event_windows
+    bg_windows = BackgroundWindows(events[["Start Time", "End Time"]], windows,
+                                   (params.bg_start_after_start, params.bg_end_after_start))
+    bg_windows.check_names({particle: list(params.SENSORS) for particle in params.PARTICLES})
+    return bg_windows
+
+
+def load_events(params: SEPPACT_parameters) -> tuple[pd.DataFrame, BackgroundWindows]:
+    """Returns the events of the event list file_events, or of date_ranges if file_events is empty (see
+    complete_events()), and their background windows, with those of their particles and sensors"""
+    if not params.file_events:
+        events = complete_events(_date_range_events(params.date_ranges), params, "the date ranges")
+        return events, make_bg_windows(events, pd.DataFrame(), params)
+    path = params.file_events
+    event_times, own_windows = read_event_list(path)
+    events = complete_events(event_times, params, f"the event list {path}")
+    try:
+        return events, make_bg_windows(events, own_windows, params)
+    except ValueError as error:
+        raise ValueError(f"The event list {path}: {error}") from None
 
 
 def make_events(params: SEPPACT_parameters) -> pd.DataFrame:
     """Returns the events of the event list file_events, or of date_ranges if file_events is empty"""
-    if params.file_events:
-        return read_events(params.file_events, params)
-    return complete_events(_date_range_events(params.date_ranges), params, "the date ranges")
+    return load_events(params)[0]
 
 
 # the columns of the file of onset corrections

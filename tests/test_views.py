@@ -2,6 +2,8 @@
 import os
 from datetime import timedelta
 
+import matplotlib.dates as mdates
+import pandas as pd
 import pytest
 from matplotlib.collections import PolyCollection
 from matplotlib.figure import Figure
@@ -227,6 +229,40 @@ def test_plot_background_returns_a_figure_and_saves_it(tmp_path, monkeypatch):
     assert [len(ax.lines) for ax in fig.axes] == [2 + 2, 3 + 2]
     assert fig.get_suptitle() == "Event 1: background 2021-01-01 10:00 to 2021-01-01 11:55 (default), end 2021-01-03 12:00 " \
         "(default)"
+
+
+def shaded(ax, label: str) -> tuple:
+    """Returns the first and last time of the area of the label in the panel"""
+    area = next(artist for artist in [*ax.collections, *ax.patches] if artist.get_label() == label)
+    if isinstance(area, PolyCollection):
+        times = area.get_paths()[0].vertices[:, 0]
+    else:
+        # axvspan: a rectangle
+        times = area.get_patch_transform().transform(area.get_path().vertices)[:, 0]
+    return tuple(pd.Timestamp(mdates.num2date(t)).tz_localize(None) for t in (times.min(), times.max()))
+
+
+def test_plot_background_with_the_window_of_a_particle(tmp_path, monkeypatch):
+    tool = synthetic_tool(tmp_path, monkeypatch)
+    tool.set_bg_window(1, T0 - timedelta(hours=1), T0 - timedelta(minutes=10), "protons", "HET")
+    fig = plot_background(tool, 1)
+    assert [panel_title(ax).get_text() for ax in fig.axes] == [
+        "electrons/HET (sun viewing, 2 mins resolution)",
+        "protons/HET (sun viewing, 2 mins resolution): background 2021-01-01 11:00 to 2021-01-01 11:50 of protons HET "
+        "(set)"]
+    assert shaded(fig.axes[0], "background window") == (pd.Timestamp(T0 - timedelta(hours=2)),
+                                                        pd.Timestamp(T0 - timedelta(minutes=5)))
+    assert shaded(fig.axes[1], "background window") == (pd.Timestamp(T0 - timedelta(hours=1)),
+                                                        pd.Timestamp(T0 - timedelta(minutes=10)))
+
+
+def test_plot_event_with_the_window_of_a_particle(tmp_path, monkeypatch):
+    tool = synthetic_tool(tmp_path, monkeypatch)
+    tool.set_bg_window(1, T0 - timedelta(hours=1), T0 - timedelta(minutes=10), "protons")
+    fig = plot_event(run(tool), 1)
+    # the electrons, then the protons
+    assert [shaded(ax, "background sample")[1] for ax in fig.axes] == \
+        [pd.Timestamp(T0 - timedelta(minutes=5))] * 2 + [pd.Timestamp(T0 - timedelta(minutes=10))] * 3
 
 
 @image_compare

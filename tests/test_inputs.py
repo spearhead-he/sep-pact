@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from spearhead.sep_pact import SEPPACT_parameters
-from spearhead.sep_pact.inputs import EVENT_LIST_LAYOUTS, make_events, read_events, read_shocks
+from spearhead.sep_pact.inputs import EVENT_LIST_LAYOUTS, make_events, read_event_list, read_events, read_shocks
 from tests.helpers import T0, make_params, write_events, write_shocks
 
 
@@ -213,3 +213,62 @@ def test_layouts_as_in_the_vda_tool():
     assert list(EVENT_LIST_LAYOUTS.values()) == [("Reference Time",), ("Start Time", "End Time"),
                                                  ("Start Time", "BG End", "End Time"),
                                                  ("Start Time", "BG Start", "BG End", "End Time")]
+
+
+def test_event_list_with_the_windows_of_particles_and_sensors(tmp_path, capsys):
+    path = tmp_path / "events.csv"
+    path.write_text("Event No,Particle,Sensor,Start Time,BG Start,BG End,End Time\n"
+                    "1,,,2021-01-01 12:00,2021-01-01 12:00,2021-01-01 13:00,2021-01-02 18:00\n"
+                    "1,protons,HET,,2021-01-01 12:00,2021-01-01 15:00,\n"
+                    "\n"
+                    "2,protons,,2021-01-05 12:00,,2021-01-05 14:00,\n"
+                    "2,electrons,HET,,,2021-01-05 13:00,2021-01-06 12:00\n")
+    event_times, windows = read_event_list(str(path))
+    assert list(event_times.columns) == ["Start Time", "End Time", "BG Start", "BG End"]
+    assert list(event_times.loc[1]) == [pd.Timestamp(t) for t in (T0, T0 + 30 * HOUR, T0, T0 + HOUR)]
+    # the times of event 2 from the rows of its particles, without a window of the event
+    assert list(event_times.loc[2, ["Start Time", "End Time"]]) == [pd.Timestamp(T0 + 96 * HOUR),
+                                                                    pd.Timestamp(T0 + 120 * HOUR)]
+    assert pd.isna(event_times.loc[2, "BG End"])
+    assert list(windows.index) == [(1, "protons", "HET"), (2, "protons", ""), (2, "electrons", "HET")]
+    assert windows.loc[(1, "protons", "HET"), "BG End"] == pd.Timestamp(T0 + 3 * HOUR)
+    assert pd.isna(windows.loc[(2, "protons", ""), "BG Start"])
+    assert capsys.readouterr().out == ""
+    # the events take the times and the window of the event
+    events = read_events(str(path), make_params(tmp_path))
+    assert times(events, 1) == [pd.Timestamp(t) for t in (T0, T0, T0 + HOUR, T0 + 30 * HOUR)]
+    assert events.loc[2, "BG Window Source"] == "default"
+
+
+def test_event_list_with_a_time_given_twice(tmp_path, capsys):
+    path = tmp_path / "events.csv"
+    path.write_text("Event No,Particle,Sensor,Start Time,End Time\n"
+                    "1,,,2021-01-01 12:00,2021-01-02 18:00\n"
+                    "1,,,2021-01-01 12:00:00,2021-01-02 20:00\n")
+    events = read_events(str(path), make_params(tmp_path))
+    assert events.loc[1, "End Time"] == pd.Timestamp(T0 + 32 * HOUR)
+    # the same Start Time in another format gives no message
+    assert capsys.readouterr().out == (f"The event list {path}: Event 1: End Time is given 2 times (2021-01-02 18:00:00 "
+                                       "in line 2, 2021-01-02 20:00:00 in line 3); the last one is used.\n")
+
+
+def test_event_list_rows_of_the_same_event_without_particles(tmp_path, capsys):
+    rows = "Event No,Start Time,End Time\n1,2021-01-01 12:00,\n1,,2021-01-02 18:00\n"
+    path = tmp_path / "events.csv"
+    path.write_text(rows)
+    events = read_events(str(path), make_params(tmp_path))
+    assert times(events)[0::3] == [pd.Timestamp(T0), pd.Timestamp(T0 + 30 * HOUR)]
+    assert capsys.readouterr().out == ""
+
+
+def test_event_list_row_without_an_event_number(tmp_path):
+    path = tmp_path / "events.csv"
+    path.write_text("Event No,Start Time,End Time\n1,2021-01-01 12:00,2021-01-02 18:00\n,2021-01-01 12:00,\n")
+    with pytest.raises(ValueError, match="Line 3 of the event list .* has no Event No"):
+        read_events(str(path), make_params(tmp_path))
+
+
+def test_event_list_with_particles_and_other_columns(tmp_path):
+    path = write_events(tmp_path, {1: {"Particle": "protons", "Sensor": "HET", "Start Time": T0, "Comment": T0}})
+    with pytest.raises(ValueError, match="with optionally Particle and Sensor"):
+        read_events(path, make_params(tmp_path))

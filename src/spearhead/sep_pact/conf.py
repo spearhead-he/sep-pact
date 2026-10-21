@@ -69,7 +69,8 @@ class SEPPACT_parameters:
     SENSORS: ClassVar[tuple] = ("HET",)
 
     # Files and folders
-    # event list: Event No, then Reference Time, or Start Time and End Time with optionally BG Start and BG End;
+    # event list: Event No, then Reference Time, or Start Time and End Time with optionally BG Start and BG End, and
+    # optionally Particle and Sensor for the rows of the background windows of particles and sensors;
     # without an event list (""), the events are date_ranges
     file_events: str = "inputs/events_example.csv"
     file_shocks: str = "inputs/shocks.dat"     # interplanetary shock list from ipshocks.helsinki.fi

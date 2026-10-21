@@ -82,8 +82,7 @@ def _plot_no_onset(ax, tool, event_no: int, particle: str, sensor: str, mevlbl: 
                    drawn: set) -> None:
     """Plots a channel group without an onset: the flux in fallback_viewing at the coarsest resolution, with a red title"""
     p = tool.params
-    bg_start = tool.events.loc[event_no, "BG Start"]
-    bg_end = tool.events.loc[event_no, "BG End"]
+    bg_start, bg_end = tool.bg_window(event_no, particle, sensor)[:2]
     calc_end = tool.events.loc[event_no, "End Time"]
     chosen = tool.df_results.loc[(event_no, particle, sensor, mevlbl)]
     ts_length, n_zeroes, ratio = chosen["Quality Length"], chosen["Quality Zeroes"], chosen["Quality Ratio"]
@@ -115,9 +114,10 @@ def _channel_values(tool, event_no: int, particle: str, sensor: str, mevlbl: str
     """Returns the values of the panel of a channel group with an onset: its flux at the resolutions and viewings of
     the onset, peak flux and fluence, and the results"""
     chosen = tool.df_results.loc[(event_no, particle, sensor, mevlbl)]
+    bg_start, bg_end = tool.bg_window(event_no, particle, sensor)[:2]
     v = SimpleNamespace(
-        bg_start=tool.events.loc[event_no, "BG Start"],
-        bg_end=tool.events.loc[event_no, "BG End"],
+        bg_start=bg_start,
+        bg_end=bg_end,
         calc_end=tool.events.loc[event_no, "End Time"],
         ts_length=chosen["Quality Length"], n_zeroes=chosen["Quality Zeroes"], ratio=chosen["Quality Ratio"],
         resample_ot=chosen["Onset Resolution"], viewing_ot=chosen["Onset Viewing"],
@@ -314,9 +314,9 @@ def plot_event(tool, event_no: int, filename: str | None = None) -> Figure:
 
 
 def plot_background(tool, event_no: int, filename: str | None = None) -> Figure:
-    """Returns the plot of the background window of an event, and saves it to filename if one is given: one panel per
+    """Returns the plot of the background windows of an event, and saves it to filename if one is given: one panel per
     particle and sensor with the flux of all its channel groups, at the finest resolution in the first viewing, and
-    the window shaded
+    its window shaded; the title of a panel with its own window gives the window
 
     tool is a SEPPACT after run_data().
     """
@@ -334,14 +334,16 @@ def plot_background(tool, event_no: int, filename: str | None = None) -> Figure:
             ax.plot(flux.index, flux[(viewing, mevlbl)].values, label=mevlbl)
         ax.set_yscale("log")
         ax.grid()
-        ax.axvspan(event["BG Start"], event["BG End"], color="green", alpha=0.3, label="background window",
-                   zorder=AREAS_ZORDER)
+        window = tool.bg_window(event_no, particle, sensor)
+        ax.axvspan(window.start, window.end, color="green", alpha=0.3, label="background window", zorder=AREAS_ZORDER)
         # one legend entry for both lines
         ax.axvline(event["Start Time"], color="black", linestyle=":", label="start and end time")
         ax.axvline(event["End Time"], color="black", linestyle=":", label="_nolegend_")
         ax.set_xlim(flux.index[0], flux.index[-1])
+        own = (f": background {window.start:%Y-%m-%d %H:%M} to {window.end:%Y-%m-%d %H:%M} of "
+               f"{' '.join(filter(None, window[3:]))} ({window.source})") if window.particle else ""
         _panel_title(ax, f"{particle}/{sensor} ({viewing} viewing, {resample_freq.total_seconds() / 60:g} mins "
-                     "resolution)", "black")
+                     f"resolution){own}", "black")
         # right of the panel, away from the window at the start of the event
         ax.legend(loc="upper left", bbox_to_anchor=(1.005, 1), fontsize="small")
     fig.suptitle(f"Event {event_no}: background {event['BG Start']:%Y-%m-%d %H:%M} to {event['BG End']:%Y-%m-%d %H:%M} "
