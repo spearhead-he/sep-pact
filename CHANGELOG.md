@@ -4,6 +4,18 @@ All notable changes of SEP-PACT. The format is based on [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+
+- Background windows of particles and sensors: an event list can have rows with the optional columns `Particle` and `Sensor`, whose `BG Start` and `BG End` are the background window of the channel groups of that particle (and sensor) in the event, instead of the window of the event. In the event times step, the new Window of dropdown sets them; in scripts, `set_bg_window()` and `reset_bg_window()` take a particle and sensor, and `bg_window()` gives the window of a series. See [Background windows of particles and sensors](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#bg-windows-of-particles).
+- `results.csv` columns `BG Start` and `BG End`, the background window of each channel group.
+- The user guide explains that the onset is never before the end of the background window, and that choosing the windows is up to the user ([Onset](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#onset-at-bg-end)).
+
+### Changed
+
+- The rows of an event list with the same `Event No` are read as one event: each time is the last one given, with a message when the rows differ. Before, they were read as separate events with the same number.
+- `BG Window Source` in `results.csv` is the source of the window of the channel group.
+- The background warnings of the event times step name the window they are about.
+
 ## [0.3.0] - 2026-10-21
 
 ### Added

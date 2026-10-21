@@ -84,18 +84,40 @@ params.check()
 After `run_data()`, and before the onsets, the background window and the end time of an event can be changed within its loaded data (the [Event times](user_guide.md#event-times-step) step of the notebook):
 
 ```python
-tool.set_bg_window(20, "2021-11-01 00:00", "2021-11-01 01:30")   # BG Start, BG End
+tool.set_bg_window(20, "2021-11-01 00:00", "2021-11-01 01:30")   # BG Start, BG End of the event
+tool.set_bg_window(20, "2021-11-01 00:00", "2021-11-01 02:30", "protons", "HET")   # of a particle and sensor
+tool.set_bg_window(20, "2021-11-01 00:00", "2021-11-01 02:30", "protons")          # of a particle, all its sensors
+tool.bg_window(20, "protons", "HET")   # (start, end, source, particle, sensor) of the window that the series use
 tool.set_end_time(20, "2021-11-02 12:00")
-tool.bg_window_points(20)      # {resolution: the fewest points with data in the window among the series of the event}
-tool.bg_window_warnings(20)    # a warning for each resolution with fewer than 3 points
+tool.bg_window_points(20)      # {resolution: the fewest points with data in the window of each series of the event}
+tool.bg_window_points(20, "protons", "HET")   # of the series of a particle and sensor
+tool.bg_window_series(20)      # {(particle, sensor) of each window, ("", "") for the event: the series that use it}
+tool.bg_window_warnings(20)    # a warning for each window and resolution with fewer than 3 points
+tool.reset_bg_window(20, "protons", "HET")   # the window of the event list, or else the window of the event
 tool.reset_bg_window(20)       # the window of the event list, or the default one
 tool.reset_end_time(20)
 tool.save_events("outputs/events.csv")
 ```
 
-- The times must stay in the order Start Time ≤ BG Start < BG End < End Time, and the end time within the loaded data (`Plot End`); otherwise a `ValueError` says why, and the event is not changed.
-- The columns `BG Window Source` and `End Time Source` of `events` (and of `results.csv`) say where the times come from: `event list`, `default` or `set`.
-- `save_events(path)` writes the event list with the times of all the events, which can be given as `file_events`.
+- The times must stay in the order Start Time ≤ BG Start < BG End < End Time for every window of the event, and the end time within the loaded data (`Plot End`); otherwise a `ValueError` says why, and the event is not changed.
+- A series uses the window of its particle and sensor, else of its particle, else of the event (see [Background windows of particles and sensors](user_guide.md#bg-windows-of-particles)). `events` has the window of each event; `bg_windows`, a `BackgroundWindows`, has all of them.
+- The columns `BG Window Source` and `End Time Source` of `events` say where the times of the event come from: `event list`, `default` or `set`; in `results.csv`, `BG Start`, `BG End` and `BG Window Source` are the ones of the window of each channel group.
+- `save_events(path)` writes the event list with the times of all the events and the rows of the windows of particles and sensors, which can be given as `file_events`.
+
+`spearhead.sep_pact.background` holds the windows and does not depend on the rest of the package:
+
+```python
+from datetime import timedelta
+from spearhead.sep_pact.background import BackgroundWindows
+
+# ranges: Start Time and End Time, indexed by Event No; windows: BG Start and BG End, indexed by Event No, Particle
+# and Sensor ("" for none)
+bg = BackgroundWindows(ranges, windows, default=(timedelta(0), timedelta(hours=2)))
+bg.window(1, "protons", "HET")   # BGWindow(start, end, source, particle, sensor)
+bg.set(1, start, end, "protons", "HET")
+bg.reset(1, "protons", "HET")
+bg.to_frame()                    # all the windows, with their source
+```
 - Run `run_onsets()` and the next steps again after a change.
 
 ## Onset corrections
@@ -121,6 +143,7 @@ After the steps, the results are attributes of the `SEPPACT` object:
 | Attribute | Content |
 |---|---|
 | `events` | The events: `Start Time`, `BG Start`, `BG End`, `End Time` and `Reference Time` (if given), with the default windows filled in, the period of data (`Plot Start`, `Plot End`), and where the background window and end time come from (`BG Window Source`, `End Time Source`) |
+| `bg_windows` | The background windows of the events and of their particles and sensors, a `BackgroundWindows` (see [Event times](#event-times)) |
 | `shocktimes` | The times of the shocks (`pandas.Series`) |
 | `dfs_flux` | The flux of the channel groups: `dfs_flux[particle][sensor][resolution]` is a DataFrame indexed by event number and time, with the columns (viewing, group) |
 | `df_series` | The results of every series: one row per event, particle, sensor, channel group (`Energy Label`), resolution and viewing (see below) |
@@ -155,7 +178,7 @@ protons = results[results["Particle"] == "protons"]
 
 ## Plots
 
-`spearhead.sep_pact.views.plot_event(tool, event_no, filename=None)` returns the plot of one event as a matplotlib `Figure`, and saves it if a file name is given. `event_plot_filename(tool, event_no)` gives the file name that `plot_events()` uses in `dir_plots`. `plot_background(tool, event_no, filename=None)` returns the plot of the event times step: the flux of all the channel groups per particle and sensor, with the background window and the start and end times.
+`spearhead.sep_pact.views.plot_event(tool, event_no, filename=None)` returns the plot of one event as a matplotlib `Figure`, and saves it if a file name is given. `event_plot_filename(tool, event_no)` gives the file name that `plot_events()` uses in `dir_plots`. `plot_background(tool, event_no, filename=None)` returns the plot of the event times step: the flux of all the channel groups per particle and sensor, with the background window of each panel and the start and end times.
 
 ```python
 from spearhead.sep_pact.views import plot_event
@@ -190,7 +213,8 @@ tool.df_results           # the same as tool.seppact.df_results
 | Module | Content |
 |---|---|
 | `conf` | `SEPPACT_parameters`, and the default channel groups and spike thresholds |
-| `inputs` | `read_shocks(path)`, `read_events(path, params)` and `make_events(params)` (the event list, or the date ranges), `EVENT_LIST_LAYOUTS`, the accepted columns of the event list, and `read_corrections(path)` with `CORRECTION_COLUMNS`, the file of onset corrections |
+| `background` | `BackgroundWindows`, the background windows per event, particle and sensor, and `split_event_rows()`, the rows of an event list with the windows of particles and sensors; it uses only pandas |
+| `inputs` | `read_shocks(path)`, `read_events(path, params)`, `make_events(params)` and `load_events(params)` (the event list, or the date ranges, and their `BackgroundWindows`), `read_event_list(path)`, `EVENT_LIST_LAYOUTS`, the accepted columns of the event list, and `read_corrections(path)` with `CORRECTION_COLUMNS`, the file of onset corrections |
 | `data` | `load()`, which returns the EPD data of each particle as `ParticleData` (the flux with the channel numbers as columns, and the energies of the channels), `load_energies()`, `group_channels_de()`, `flux_cache_file()`, `download_data()` and `resample_flux()`: the EPD data, the flux of the channel groups and its cache |
 | `analysis` | `SEPPACT`, and the functions of the steps: `onset_detection_sigma()` (which returns the onset, the background start and end, and the background level and threshold), `quality_analysis()`, `choose_onset()`, `choose_peak()`, `choose_fluence()`, `detect_spikes()`, `remove_spikes()`, `get_peak_flux()`, `fluence_interval()`, `peak_search_end()` and `shocks_in_range()` |
 | `views` | `plot_event()`, `plot_background()` and `event_plot_filename()` |

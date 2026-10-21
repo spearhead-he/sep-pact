@@ -202,7 +202,8 @@ class SEPPACT_notebook:
         layouts = "; ".join(", ".join(columns) for columns in EVENT_LIST_LAYOUTS.values())
         return widgets.VBox([
             _section("Event list", field_events,
-                     _note(f"A CSV file with the column Event No, then one of: {layouts}. See the user guide.")),
+                     _note(f"A CSV file with the column Event No, then one of: {layouts}; optionally Particle and Sensor, "
+                           "for the background windows of particles and sensors. See the user guide.")),
             _section("Date ranges, used without an event list", wgt_ranges),
             _section("Shock list", self._input_file("file_shocks", "Shock list:", self._shocks_info, "Path to the file")),
             _section("Event windows",

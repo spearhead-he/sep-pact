@@ -11,6 +11,7 @@
   - [Parameters in scripts](#parameters-in-scripts)
 - [Input files](#input-files)
   - [Event list](#event-list)
+  - [Background windows of particles and sensors](#bg-windows-of-particles)
   - [Shock list](#shock-list)
 - [Steps of the notebook](#steps-of-the-notebook)
   - [Data](#data-step)
@@ -125,7 +126,7 @@ In scripts, the parameters are the arguments of `SEPPACT_parameters`; see the [l
 
 ### Event list
 
-A CSV file, given by its path in the form, with one row per event. The first column is the event number (`Event No`), used in the tables and the plot names. The other columns are one of these layouts, the same as in the SPEARHEAD VDA tool:
+A CSV file, given by its path in the form, with one row per event, and optionally rows with the [background windows of particles and sensors](#bg-windows-of-particles). The first column is the event number (`Event No`), used in the tables and the plot names. The other columns are one of these layouts, the same as in the SPEARHEAD VDA tool:
 
 | Layout | Columns after `Event No` | Example in `inputs/` |
 |---|---|---|
@@ -142,13 +143,14 @@ Event No,Start Time,BG Start,BG End,End Time
 - `Start Time` and `End Time`: the data range of the event. With a `Reference Time` (an approximate time of the event, e.g. its onset or a flare), they are `start_before_reference` before and `end_after_reference` after it.
 - `BG Start` and `BG End`: the background window. Without them, or with empty cells, the window is the default one, `bg_start_after_start` to `bg_end_after_start` after the Start Time. With only `BG End`, the window starts at the Start Time.
 - The times of each event must be in the order Start Time ≤ BG Start < BG End < End Time; an event list with an event out of order is not read, and the error names the event.
-- The data range is extended to `min_plot_window` if it is shorter; the onset itself is always detected in the data, after `BG End`.
+- The data range is extended to `min_plot_window` if it is shorter; the onset itself is always detected in the data, at or after `BG End` (see [Onset](#onset-step)).
+- An event can have more than one row: each time is the last one given in its rows (see [below](#bg-windows-of-particles)).
 
 The times are in UTC, as `YYYY-MM-DD HH:MM:SS` or `YYYY-MM-DD HH:MM` (ISO 8601). The columns may be in any order, and spaces after the commas are allowed.
 
 Without an event list, the events are the date ranges of the form (`date_ranges`), with the default background window.
 
-The [Event times](#event-times-step) step can save the event list with the background windows and end times set in it, in the layout with the background window; give it as the event list of a later run to use the same times.
+The [Event times](#event-times-step) step can save the event list with the background windows and end times set in it, in the layout with the background window and with the rows of the windows of particles and sensors; give it as the event list of a later run to use the same times.
 
 Event lists with an `Onset Time`, as in earlier versions, are not accepted. To convert one, with the windows it had (empty cells were 2 hours and 5 minutes before the onset, and 48 hours after it):
 
@@ -172,6 +174,27 @@ import pandas as pd
 pd.read_excel("my_events.xlsx", index_col=0).to_csv("my_events.csv", date_format="%Y-%m-%d %H:%M:%S")
 ```
 
+<a id="bg-windows-of-particles"></a>
+### Background windows of particles and sensors
+
+Electrons and protons, or two sensors, can start to rise at different times, so that one background window does not fit all of them. With the optional columns `Particle` and `Sensor`, an event list can give the background window of a particle, or of a particle and sensor, in its own rows:
+
+```
+Event No,Particle,Sensor,Start Time,BG Start,BG End,End Time
+1,,,2021-10-31 19:00,2021-10-31 19:00,2021-11-01 01:30,2021-11-03 02:05
+1,protons,HET,,2021-11-01 00:00,2021-11-01 02:30,
+2,,,2022-03-28 10:00,,2022-03-28 11:00,2022-03-29 10:00
+```
+
+- A row with empty `Particle` and `Sensor` is a row of the event: its `BG Start` and `BG End` are the background window of the event.
+- A row with a `Particle` and a `Sensor` gives, in `BG Start` and `BG End`, the window of the channel groups of that particle and sensor in the event. A row with only the `Particle` gives the window of all its sensors. A `Sensor` without a `Particle` is not accepted.
+- The channel groups use the window of their particle and sensor, else the one of their particle, else the one of the event, and else the default one. In the example, the proton channel groups of event 1 use the window from 00:00 to 02:30, and the electrons the window of the event.
+- The row of a particle needs a `BG End`; without a `BG Start`, its window starts at the Start Time. Its window must be in the order Start Time ≤ BG Start < BG End < End Time of the event.
+- The particles are `electrons` and `protons`, and the sensor `HET`; the case does not matter.
+- The times of the event (`Start Time`, `End Time`, `Reference Time`) can be in any of its rows, and the event does not need a row of its own: without one, it has the default window. When a time is given in more than one row of an event with different values, the last one is used, and a message names the rows; the same applies to the window of the same particle and sensor.
+
+Event lists without the columns `Particle` and `Sensor` keep one window per event, as before.
+
 ### Shock list
 
 The shock list, by default `inputs/shocks.dat`, is the list of interplanetary shocks of the [ipshocks database](https://ipshocks.helsinki.fi/): lines starting with `#` are comments, and the first six columns (separated by `;`) are the year, month, day, hour, minute and second of the shock. The analysis of a channel group ends at the first shock after its onset, if that is before `End Time`.
@@ -181,7 +204,7 @@ The shock list, by default `inputs/shocks.dat`, is the list of interplanetary sh
 1. **Setup:** imports the package and creates the interface, `tool = SEPPACT_notebook()`.
 2. **Parameters:** `tool.parameters_form()`; see [Parameters](#parameters).
 3. **Data:** `tool.run_data()` reads the event list and the shock list, fills in the missing windows, and downloads the data (see [Data](#data-step)). It shows the event list with its windows.
-4. **Event times:** `tool.event_times()` shows the background window and the end time of each event, which can be changed (see [Event times](#event-times-step)).
+4. **Event times:** `tool.event_times()` shows the background windows and the end time of each event, which can be changed, also for a particle and sensor (see [Event times](#event-times-step)).
 5. **Analysis:** `tool.run_analysis()` runs the onset, spikes, peak flux and fluence steps (see [Analysis](#analysis-step)).
 6. **Events:** `tool.event_viewer()` shows the plot and the results of each event, and the onset of each channel group can be corrected (see [Events](#events-step) and [Onset corrections](#onset-corrections)).
 7. **Results:** `tool.save_results()` writes `results.csv` and, if "Save the plots of the events" is on, the plots (see [Results](#results)).
@@ -198,13 +221,14 @@ The result is cached in `dir_saves`, in a file named after the level, the viewin
 <a id="event-times-step"></a>
 ### Event times
 
-Shows the background window and the end time of the event chosen in the dropdown, with a plot of the flux of all its channel groups (one panel per particle and sensor, at the finest resolution, in the first viewing), the background window shaded and the start and end times dotted.
+Shows the background windows and the end time of the event chosen in the dropdown, with a plot of the flux of all its channel groups (one panel per particle and sensor, at the finest resolution, in the first viewing), the background window of each panel shaded and the start and end times dotted. The title of a panel with a [window of its own](#bg-windows-of-particles) gives the window.
 
-- **Background:** a range slider over the data points from the Start Time to the End Time; move its ends to set the window (`BG Start`, `BG End`).
-- **End time:** a slider over the data points from after the background window to the end of the loaded data; move it to set the `End Time`. To extend an event beyond its data, change the event list and run the data step again. The slider starts at the closest data point at or before the end time, which is not changed until the slider is moved.
-- **Reset:** gives back the background window and the end time of the event list, or the default ones.
-- **Status:** the window and the end time, where they come from (`event list`, `default` or `set`), and the number of points with data in the window at each resolution (the fewest among the series of the event). A window with fewer than 3 points at a resolution is shown with a warning in red: its standard deviation, and so the threshold, is not reliable, and with 1 point there is no onset at that resolution. The checkbox limits the list to the events with warnings.
-- **Save:** writes the event list with the times of all the events (by default `outputs/events.csv`), which can be given as the [event list](#event-list) of a later run.
+- **Window of:** the window that the slider sets: the one of the event, or of a particle and sensor (e.g. `protons HET`), which the channel groups of that particle and sensor use instead of the window of the event. A particle and sensor without a window of its own shows the window of the event until the slider is moved.
+- **Background:** a range slider over the data points from the Start Time to the End Time; move its ends to set the chosen window (`BG Start`, `BG End`).
+- **End time:** a slider over the data points from after the background windows of the event to the end of the loaded data; move it to set the `End Time`. To extend an event beyond its data, change the event list and run the data step again. The slider starts at the closest data point at or before the end time, which is not changed until the slider is moved.
+- **Reset:** gives back the chosen window of the event list, or else the default one for the event, or the window of the event for a particle and sensor. For the event, it also gives back the end time.
+- **Status:** the window of the event and the windows of particles and sensors, where they come from (`event list`, `default` or `set`), the number of points with data in each window at each resolution (the fewest among the series that use it), and the end time and where it comes from. A window with fewer than 3 points at a resolution is shown with a warning in red: its standard deviation, and so the threshold, is not reliable, and with 1 point there is no onset at that resolution. The checkbox limits the list to the events with warnings.
+- **Save:** writes the event list with the times of all the events and the windows of particles and sensors (by default `outputs/events.csv`), which can be given as the [event list](#event-list) of a later run.
 
 A changed end time also changes where the onsets are searched, the data quality check, the window of the spikes and peak, and the fluence interval. Run the analysis step after the changes; the status line reminds of it when the analysis has already run.
 
@@ -217,9 +241,12 @@ The analysis step shows its progress through the onset, spikes, peak flux and fl
 ### Onset
 
 For each event, channel group, resolution and viewing:
-1. The background level and standard deviation are calculated from `BG Start` to `BG End`. The threshold is the level plus `onset_sigma` standard deviations.
+1. The background level and standard deviation are calculated from `BG Start` to `BG End` of the background window of the channel group: the window of its particle and sensor, of its particle, or of the event (see [Background windows of particles and sensors](#bg-windows-of-particles)). The threshold is the level plus `onset_sigma` standard deviations.
 2. From `BG End` to `End Time`, the onset is the first of `onset_points` consecutive points above the threshold.
 3. The onset is then moved back to earlier points as long as each one is lower than the next, but not before `BG End`.
+
+<a id="onset-at-bg-end"></a>
+The onset is never before `BG End`. When the flux already rises inside the background window, the onset is at `BG End`, marked in the column `Onset at BG End` of `results.csv` and by an orange panel title: the event may have started earlier, and its background level and threshold include part of the rise. Choosing background windows that end before the rise is up to the user: change them in the [Event times](#event-times-step) step, for the event or for a particle and sensor, or in the [event list](#event-list).
 
 A channel group of another particle than the reference channel (by default, a proton group) with no onset at a resolution and viewing takes the onset of the reference channel at the same resolution and viewing. This is marked in the column `Onset Copied` of `results.csv`.
 
@@ -291,7 +318,8 @@ Event No,Particle,Sensor,Energy Label,Low Energy,High Energy,Onset Time,Onset Re
 | `Onset Copied` | `True` if the onset is the one of the reference channel (see [Onset](#onset-step)) |
 | `Onset at BG End` | `True` if the onset is at the end of the background window: the rise may have started earlier |
 | `Onset Corrected` | `True` if the onset was set by hand (see [Onset corrections](#onset-corrections)) |
-| `BG Window Source`, `End Time Source` | Where the background window and the end time of the event come from: `event list`, `default`, or `set` in the [Event times](#event-times-step) step |
+| `BG Start`, `BG End` | Background window of the channel group: the window of its particle and sensor, of its particle, or of the event |
+| `BG Window Source`, `End Time Source` | Where the background window of the channel group and the end time of the event come from: `event list`, `default`, or `set` in the [Event times](#event-times-step) step |
 | `Peak Flux` | Chosen peak flux |
 | `Peak Flux Time` | Time of the peak flux |
 | `Peak Flux Resolution`, `Peak Flux Viewing` | Resolution and viewing of the peak flux |
@@ -327,7 +355,7 @@ Each plot, `event_<number>.png`, has the title of the event, the legend, and one
 |---|---|---|
 | Orange line | Data (Onset) | Flux at the resolution and viewing of the onset |
 | Light orange line | Data (No Onset) | Flux in `fallback_viewing` at the coarsest resolution, of a channel group without an onset |
-| Green area | BG sample | Background window |
+| Green area | BG sample | Background window of the channel group |
 | Blue dashed line | BG Level | Background level |
 | Red dashed line | nσ Threshold | Onset threshold |
 | Green dashed line and label | Onset Time | Onset time; the label notes "from 1 MeV electrons" for an onset copied from the reference channel, and "at BG end" for an onset at the end of the background window |
