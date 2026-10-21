@@ -1,171 +1,329 @@
-"""Tests of the background windows: their source, setting and resetting them, their points, and save_events()"""
-from datetime import timedelta
+"""Tests of the background windows per event, particle and sensor (background)"""
+from datetime import datetime, timedelta
 
+import numpy as np
 import pandas as pd
 import pytest
 
-from spearhead.sep_pact import SEPPACT
-from spearhead.sep_pact.inputs import read_events
-from tests.helpers import T0, bg_end_event, make_params, synthetic_tool, write_events, write_shocks
+from spearhead.sep_pact.background import (BackgroundWindows, key_label, order_error, split_event_rows,
+                                           window_points)
 
+T0 = pd.Timestamp(2021, 1, 1, 12)
 HOUR = timedelta(hours=1)
-MINUTE = timedelta(minutes=1)
+DEFAULT = (timedelta(0), 2 * HOUR)
 
 
-@pytest.fixture
-def tool(tmp_path, monkeypatch):
-    return synthetic_tool(tmp_path, monkeypatch)
+def ranges(*event_nos) -> pd.DataFrame:
+    """Events from T0 + (n - 1) days, 30 h long"""
+    starts = [T0 + timedelta(days=n - 1) for n in event_nos]
+    return pd.DataFrame({"Start Time": starts, "End Time": [start + 30 * HOUR for start in starts]},
+                        index=pd.Index(event_nos, name="Event No"))
 
 
-def window(tool, event_no=1) -> list:
-    return list(tool.events.loc[event_no, ["BG Start", "BG End", "BG Window Source"]])
+def windows(rows: dict) -> pd.DataFrame:
+    """{(event_no, particle, sensor): (bg_start, bg_end)} as the windows of an event list"""
+    return pd.DataFrame(list(rows.values()), columns=["BG Start", "BG End"],
+                        index=pd.MultiIndex.from_tuples(list(rows), names=["Event No", "Particle", "Sensor"]))
 
 
-def test_bg_window_of_the_event_list_and_default(tmp_path):
-    rows = {1: {"Start Time": T0, "End Time": T0 + 30 * HOUR},
-            2: {"Start Time": T0, "BG End": T0 + 3 * HOUR, "End Time": T0 + 30 * HOUR},
-            3: {"Start Time": T0, "BG Start": T0 + HOUR, "BG End": T0 + 3 * HOUR, "End Time": T0 + 30 * HOUR}}
-    events = read_events(write_events(tmp_path, rows), make_params(tmp_path))
-    assert list(events["BG Window Source"]) == ["default", "event list", "event list"]
-    assert list(events["End Time Source"]) == ["event list"] * 3
+def event_rows(rows: list[dict]) -> pd.DataFrame:
+    """The rows of an event list, indexed by their line in the file"""
+    df = pd.DataFrame(rows).reindex(columns=["Event No", "Particle", "Sensor", "Start Time", "BG Start", "BG End",
+                                             "End Time"])
+    return df.set_axis(range(2, len(df) + 2))
 
 
-def test_bg_window_of_date_ranges(tmp_path):
-    params = make_params(tmp_path, file_events="", date_ranges=[(T0, T0 + 30 * HOUR)])
-    tool = SEPPACT(params)
-    write_shocks(tmp_path / "inputs", [T0])
-    tool.run_inputs()
-    assert list(tool.events["BG Window Source"]) == ["default"]
-    assert list(tool.events["End Time Source"]) == ["event list"]
+# split_event_rows
+
+def test_split_event_rows_without_particles():
+    df = event_rows([{"Event No": 1, "Start Time": T0, "BG End": T0 + HOUR, "End Time": T0 + 30 * HOUR},
+                     {"Event No": 2, "Start Time": T0 + 48 * HOUR, "End Time": T0 + 60 * HOUR}])
+    times, own, messages = split_event_rows(df)
+    assert list(times.index) == [1, 2]
+    assert list(times.columns) == ["Start Time", "End Time", "BG Start", "BG End"]
+    assert times.loc[1, "BG End"] == T0 + HOUR
+    assert pd.isna(times.loc[2, "BG End"])
+    assert own.empty
+    assert messages == []
 
 
-def test_set_bg_window(tool):
-    tool.set_bg_window(1, T0 - HOUR, "2021-01-01 11:30")
-    assert window(tool) == [pd.Timestamp(T0 - HOUR), pd.Timestamp(T0 - 30 * MINUTE), "set"]
-    assert tool.events["BG Start"].dtype == "datetime64[ns]"
+def test_split_event_rows_with_the_window_of_a_particle_and_sensor():
+    df = event_rows([{"Event No": 2, "Start Time": T0, "BG End": T0 + HOUR, "End Time": T0 + 30 * HOUR},
+                     {"Event No": 2, "Particle": "protons", "Sensor": "HET", "BG Start": T0 + HOUR,
+                      "BG End": T0 + 3 * HOUR}])
+    times, own, messages = split_event_rows(df)
+    assert list(times.index) == [2]
+    assert times.loc[2, "BG End"] == T0 + HOUR
+    assert list(own.index) == [(2, "protons", "HET")]
+    assert list(own.loc[(2, "protons", "HET")]) == [T0 + HOUR, T0 + 3 * HOUR]
+    assert messages == []
 
 
-@pytest.mark.parametrize("start, end", [
-    (T0 - 3 * HOUR, T0 - HOUR),          # before the start time
-    (T0 - HOUR, T0 - HOUR),              # empty
-    (T0 - HOUR, T0 - 2 * HOUR),          # end before start
-    (T0, T0 + 49 * HOUR),                # after the end time
+def test_split_event_rows_takes_the_times_of_the_event_from_any_row():
+    # no row of the event itself: the times are in the rows of the particles
+    df = event_rows([{"Event No": 3, "Particle": "protons", "Sensor": "HET", "Start Time": T0, "BG End": T0 + HOUR},
+                     {"Event No": 3, "Particle": "electrons", "Sensor": "HET", "BG End": T0 + 2 * HOUR,
+                      "End Time": T0 + 30 * HOUR}])
+    times, own, messages = split_event_rows(df)
+    assert list(times.loc[3, ["Start Time", "End Time"]]) == [T0, T0 + 30 * HOUR]
+    # no window of the event: it gets the default one later
+    assert pd.isna(times.loc[3, "BG End"])
+    assert list(own.index) == [(3, "protons", "HET"), (3, "electrons", "HET")]
+    assert messages == []
+
+
+def test_split_event_rows_uses_the_last_time_with_a_message():
+    df = event_rows([{"Event No": 2, "Start Time": T0, "End Time": T0 + 30 * HOUR},
+                     {"Event No": 2, "Particle": "protons", "Sensor": "HET", "Start Time": T0 + HOUR,
+                      "BG End": T0 + 3 * HOUR},
+                     {"Event No": 2, "Start Time": T0 + 2 * HOUR}])
+    times, _, messages = split_event_rows(df)
+    assert times.loc[2, "Start Time"] == T0 + 2 * HOUR
+    assert messages == ["Event 2: Start Time is given 3 times (2021-01-01 12:00:00 in line 2, 2021-01-01 13:00:00 in "
+                        "line 3, 2021-01-01 14:00:00 in line 4); the last one is used."]
+
+
+def test_split_event_rows_same_times_give_no_message():
+    row = {"Event No": 2, "Start Time": T0, "End Time": T0 + 30 * HOUR}
+    times, _, messages = split_event_rows(event_rows([row, row]))
+    assert list(times.index) == [2]
+    assert messages == []
+
+
+def test_split_event_rows_uses_the_last_window_of_a_particle_and_sensor_with_a_message():
+    df = event_rows([{"Event No": 2, "Start Time": T0, "End Time": T0 + 30 * HOUR},
+                     {"Event No": 2, "Particle": "protons", "Sensor": "HET", "BG End": T0 + 3 * HOUR},
+                     {"Event No": 2, "Particle": "protons", "Sensor": "HET", "BG End": T0 + 4 * HOUR},
+                     {"Event No": 2, "Particle": "protons", "BG End": T0 + 5 * HOUR}])
+    _, own, messages = split_event_rows(df)
+    assert own.loc[(2, "protons", "HET"), "BG End"] == T0 + 4 * HOUR
+    # the window of the particle is another one
+    assert own.loc[(2, "protons", ""), "BG End"] == T0 + 5 * HOUR
+    assert messages == ["Event 2, protons HET: BG End is given 2 times (2021-01-01 15:00:00 in line 3, "
+                        "2021-01-01 16:00:00 in line 4); the last one is used."]
+
+
+def test_split_event_rows_uses_the_last_window_of_the_event_with_a_message():
+    df = event_rows([{"Event No": 2, "Start Time": T0, "BG End": T0 + HOUR, "End Time": T0 + 30 * HOUR},
+                     {"Event No": 2, "BG End": T0 + 2 * HOUR}])
+    times, _, messages = split_event_rows(df)
+    assert times.loc[2, "BG End"] == T0 + 2 * HOUR
+    assert messages == ["Event 2: BG End is given 2 times (2021-01-01 13:00:00 in line 2, 2021-01-01 14:00:00 in "
+                        "line 3); the last one is used."]
+
+
+def test_split_event_rows_strips_the_names():
+    df = event_rows([{"Event No": 1, "Start Time": T0, "End Time": T0 + 30 * HOUR},
+                     {"Event No": 1, "Particle": " protons ", "Sensor": "HET ", "BG End": T0 + HOUR}])
+    assert list(split_event_rows(df)[1].index) == [(1, "protons", "HET")]
+
+
+def test_split_event_rows_sensor_without_a_particle():
+    df = event_rows([{"Event No": 1, "Sensor": "HET", "Start Time": T0, "BG End": T0 + HOUR,
+                      "End Time": T0 + 30 * HOUR}])
+    with pytest.raises(ValueError, match="Line 2 of the event list has a Sensor without a Particle"):
+        split_event_rows(df)
+
+
+def test_split_event_rows_particle_without_a_window():
+    df = event_rows([{"Event No": 1, "Start Time": T0, "End Time": T0 + 30 * HOUR},
+                     {"Event No": 1, "Particle": "protons", "Sensor": "HET", "BG Start": T0}])
+    with pytest.raises(ValueError, match="Event 1, protons HET of the event list has no BG End"):
+        split_event_rows(df)
+
+
+# BackgroundWindows
+
+def test_window_of_the_event_list_and_the_default_one():
+    bg = BackgroundWindows(ranges(1, 2), windows({(1, "", ""): (T0 + HOUR, T0 + 3 * HOUR)}), DEFAULT)
+    assert bg.window(1) == (T0 + HOUR, T0 + 3 * HOUR, "event list", "", "")
+    start_2 = T0 + timedelta(days=1)
+    assert bg.window(2) == (start_2, start_2 + 2 * HOUR, "default", "", "")
+
+
+def test_window_without_a_background_start_starts_at_the_start_time():
+    bg = BackgroundWindows(ranges(1), windows({(1, "", ""): (pd.NaT, T0 + 3 * HOUR),
+                                               (1, "protons", "HET"): (pd.NaT, T0 + 4 * HOUR)}), DEFAULT)
+    assert bg.window(1)[:2] == (T0, T0 + 3 * HOUR)
+    assert bg.window(1, "protons", "HET")[:2] == (T0, T0 + 4 * HOUR)
+
+
+def test_window_of_a_series_falls_back_to_its_particle_then_to_the_event():
+    bg = BackgroundWindows(ranges(1), windows({(1, "protons", "HET"): (T0, T0 + 3 * HOUR),
+                                               (1, "protons", ""): (T0, T0 + 4 * HOUR)}), DEFAULT)
+    assert bg.window(1, "protons", "HET") == (T0, T0 + 3 * HOUR, "event list", "protons", "HET")
+    assert bg.window(1, "protons", "EPT") == (T0, T0 + 4 * HOUR, "event list", "protons", "")
+    assert bg.window(1, "electrons", "HET") == (T0, T0 + 2 * HOUR, "default", "", "")
+    assert bg.own_windows() == [(1, "protons", "HET"), (1, "protons", "")]
+
+
+def test_window_of_an_unknown_event():
+    with pytest.raises(KeyError, match="There is no event 5"):
+        BackgroundWindows(ranges(1)).window(5)
+
+
+def test_windows_of_unknown_events():
+    with pytest.raises(ValueError, match="The background windows of the events 4 are of no event"):
+        BackgroundWindows(ranges(1), windows({(4, "", ""): (T0, T0 + HOUR)}))
+
+
+@pytest.mark.parametrize("key, window", [
+    ((1, "", ""), (T0 - HOUR, T0 + HOUR)),
+    ((1, "protons", "HET"), (T0 + 3 * HOUR, T0 + 2 * HOUR)),
+    ((1, "protons", ""), (T0, T0 + 31 * HOUR)),
 ])
-def test_set_bg_window_outside_the_data_range_or_in_the_wrong_order(tool, start, end):
-    before = window(tool)
-    with pytest.raises(ValueError, match="The background window of event 1 is not valid: the times must be in the "
+def test_windows_outside_the_data_range(key, window):
+    with pytest.raises(ValueError, match=f"The background window of {key_label(*key)}: the times must be in the order"):
+        BackgroundWindows(ranges(1), windows({key: window}))
+
+
+def test_set_and_reset_the_window_of_the_event():
+    bg = BackgroundWindows(ranges(1, 2), windows({(1, "", ""): (T0 + HOUR, T0 + 3 * HOUR)}), DEFAULT)
+    bg.set(1, T0, datetime(2021, 1, 1, 18))
+    assert bg.window(1) == (T0, T0 + 6 * HOUR, "set", "", "")
+    bg.reset(1)
+    assert bg.window(1) == (T0 + HOUR, T0 + 3 * HOUR, "event list", "", "")
+    start_2 = T0 + timedelta(days=1)
+    bg.set(2, start_2, start_2 + HOUR)
+    bg.reset(2)
+    assert bg.window(2) == (start_2, start_2 + 2 * HOUR, "default", "", "")
+
+
+def test_set_and_reset_the_window_of_a_particle_and_sensor():
+    bg = BackgroundWindows(ranges(1), windows({(1, "protons", ""): (T0, T0 + 4 * HOUR)}), DEFAULT)
+    bg.set(1, T0, T0 + 5 * HOUR, "electrons", "HET")
+    bg.set(1, T0, T0 + 6 * HOUR, "protons")
+    assert bg.window(1, "electrons", "HET") == (T0, T0 + 5 * HOUR, "set", "electrons", "HET")
+    assert bg.window(1, "protons", "HET") == (T0, T0 + 6 * HOUR, "set", "protons", "")
+    bg.reset(1, "electrons", "HET")
+    bg.reset(1, "protons")
+    # removed, and back to the event list
+    assert bg.window(1, "electrons", "HET")[2:] == ("default", "", "")
+    assert bg.window(1, "protons", "HET") == (T0, T0 + 4 * HOUR, "event list", "protons", "")
+    # nothing to reset
+    bg.reset(1, "electrons", "HET")
+    assert bg.own_windows() == [(1, "protons", "")]
+
+
+def test_set_a_window_outside_the_data_range():
+    bg = BackgroundWindows(ranges(1), default=DEFAULT)
+    with pytest.raises(ValueError, match="The background window of Event 1, protons HET: the times must be in the "
                                          "order Start Time <= BG Start < BG End < End Time"):
-        tool.set_bg_window(1, start, end)
-    assert window(tool) == before
+        bg.set(1, T0 + 3 * HOUR, T0 + 2 * HOUR, "protons", "HET")
+    assert bg.own_windows() == []
 
 
-def test_reset_bg_window_to_the_default(tool):
-    default = window(tool)
-    tool.set_bg_window(1, T0 - HOUR, T0 - 30 * MINUTE)
-    tool.reset_bg_window(1)
-    assert window(tool) == default
-    assert default[2] == "default"
+def test_set_a_window_of_a_sensor_without_its_particle():
+    with pytest.raises(ValueError, match="A background window of a sensor needs its particle"):
+        BackgroundWindows(ranges(1)).set(1, T0, T0 + HOUR, sensor="HET")
 
 
-def test_reset_bg_window_to_the_event_list(tmp_path, monkeypatch):
-    tool = synthetic_tool(tmp_path, monkeypatch, events={1: bg_end_event(T0 - 30 * MINUTE)})
-    tool.set_bg_window(1, T0 - HOUR, T0 - 45 * MINUTE)
-    tool.reset_bg_window(1)
-    assert window(tool) == [pd.Timestamp(T0 - 2 * HOUR), pd.Timestamp(T0 - 30 * MINUTE), "event list"]
+def test_set_a_window_of_an_unknown_event():
+    with pytest.raises(KeyError, match="There is no event 3"):
+        BackgroundWindows(ranges(1)).set(3, T0, T0 + HOUR)
 
 
-def test_set_bg_window_changes_the_onset_search(tool):
-    # the synthetic flux rises at T0; with the background ending after it, the onset is found later
-    tool.run_onsets()
-    assert tool.df_results["Onset Time"].iloc[0] < pd.Timestamp(T0)
-    tool.set_bg_window(1, T0 - 2 * HOUR, T0 + 30 * MINUTE)
-    tool.run_onsets()
-    assert tool.df_results["Onset Time"].iloc[0] >= pd.Timestamp(T0 + 30 * MINUTE)
+def test_set_default_changes_only_the_default_windows():
+    bg = BackgroundWindows(ranges(1, 2, 3), windows({(1, "", ""): (T0 + HOUR, T0 + 3 * HOUR)}), DEFAULT)
+    start_3 = T0 + timedelta(days=2)
+    bg.set(3, start_3, start_3 + 5 * HOUR)
+    bg.set_default(HOUR, 4 * HOUR)
+    start_2 = T0 + timedelta(days=1)
+    assert bg.window(1)[:3] == (T0 + HOUR, T0 + 3 * HOUR, "event list")
+    assert bg.window(2)[:3] == (start_2 + HOUR, start_2 + 4 * HOUR, "default")
+    assert bg.window(3)[:3] == (start_3, start_3 + 5 * HOUR, "set")
+    # reset uses the new default
+    bg.reset(3)
+    assert bg.window(3)[:3] == (start_3 + HOUR, start_3 + 4 * HOUR, "default")
 
 
-def test_bg_window_points(tool):
-    # the default window, 1 h 55 min of data
-    assert tool.bg_window_points(1) == {timedelta(minutes=2): 58, timedelta(minutes=5): 24, timedelta(minutes=10): 12,
-                                        timedelta(minutes=30): 4}
-    assert tool.bg_window_warnings(1) == []
+def test_set_default_outside_the_data_range():
+    bg = BackgroundWindows(ranges(1), default=DEFAULT)
+    with pytest.raises(ValueError, match="The background window of Event 1: the times must be in the order"):
+        bg.set_default(HOUR, 40 * HOUR)
+    assert bg.default == DEFAULT
+    assert bg.window(1)[:2] == (T0, T0 + 2 * HOUR)
 
 
-def test_bg_window_warnings(tool):
-    tool.set_bg_window(1, T0 - HOUR, T0 - 40 * MINUTE)
-    assert tool.bg_window_points(1)[timedelta(minutes=30)] == 1
-    assert tool.bg_window_warnings(1) == [
-        "The background window of event 1 has 1 point at the 30 min resolution in a series (fewer than 3)."]
+def test_set_end_time_after_all_the_windows():
+    bg = BackgroundWindows(ranges(1), windows({(1, "protons", "HET"): (T0, T0 + 10 * HOUR)}), DEFAULT)
+    bg.set_end_time(1, T0 + 11 * HOUR)
+    assert bg.ranges.loc[1, "End Time"] == T0 + 11 * HOUR
+    with pytest.raises(ValueError, match="The background window of Event 1, protons HET: the times must be"):
+        bg.set_end_time(1, T0 + 9 * HOUR)
+    assert bg.ranges.loc[1, "End Time"] == T0 + 11 * HOUR
 
 
-def test_bg_window_points_without_data(tmp_path, monkeypatch):
-    tool = synthetic_tool(tmp_path, monkeypatch)
-    flux = tool.dfs_flux["electrons"]["HET"][timedelta(minutes=10)]
-    # no data from 10:00 to 11:00 in one series: 5 of the 12 points of the window (10:00 to 11:50) are left
-    flux.loc[(1, slice(T0 - 2 * HOUR, T0 - HOUR)), flux.columns[0]] = float("nan")
-    assert tool.bg_window_points(1)[timedelta(minutes=10)] == 5
+def test_check_names_writes_them_as_given():
+    bg = BackgroundWindows(ranges(1), windows({(1, "Protons", "het"): (T0, T0 + 3 * HOUR),
+                                               (1, "ELECTRONS", ""): (T0, T0 + 4 * HOUR)}), DEFAULT)
+    bg.check_names({"electrons": ["HET"], "protons": ["HET", "EPT"]})
+    assert bg.own_windows() == [(1, "protons", "HET"), (1, "electrons", "")]
+    # reset keeps the windows of the event list
+    bg.set(1, T0, T0 + 5 * HOUR, "protons", "HET")
+    bg.reset(1, "protons", "HET")
+    assert bg.window(1, "protons", "HET")[:3] == (T0, T0 + 3 * HOUR, "event list")
 
 
-def test_save_events_keeps_the_windows(tool, tmp_path):
-    tool.set_bg_window(1, T0 - HOUR, T0 - 30 * MINUTE)
-    path = str(tmp_path / "saved.csv")
-    tool.save_events(path)
-    assert pd.read_csv(path).columns.tolist() == ["Event No", "Start Time", "BG Start", "BG End", "End Time"]
-    events = read_events(path, tool.params)
-    columns = ["Start Time", "BG Start", "BG End", "End Time", "Plot Start", "Plot End"]
-    pd.testing.assert_frame_equal(events[columns], tool.events[columns])
-    assert list(events["BG Window Source"]) == ["event list"]
-
-
-def end_time(tool, event_no=1) -> list:
-    return list(tool.events.loc[event_no, ["End Time", "End Time Source"]])
-
-
-def test_end_time_of_reference_times(tool):
-    assert end_time(tool) == [pd.Timestamp(T0 + 48 * HOUR), "default"]
-
-
-def test_set_end_time(tool):
-    tool.set_end_time(1, "2021-01-02 12:00")
-    assert end_time(tool) == [pd.Timestamp(T0 + 24 * HOUR), "set"]
-    assert tool.events["End Time"].dtype == "datetime64[ns]"
-    # the background window is not changed
-    assert window(tool)[2] == "default"
-
-
-@pytest.mark.parametrize("end, message", [
-    (T0 - 5 * MINUTE, "is not valid: the times must be in the order Start Time <= BG Start < BG End < End Time"),
-    (T0 - 2 * HOUR, "is not valid: the times must be in the order"),
-    (T0 + 49 * HOUR, r"\(2021-01-03 13:00:00\) is after the end of its data \(2021-01-03 12:00:00\). To extend it, "
-                     "change the event list and run the data step again"),
+@pytest.mark.parametrize("key, message", [
+    ((1, "ions", "HET"), "Event 1, ions HET of the event list: there is no ions HET. The particles and their sensors "
+                         "are: electrons: HET; protons: HET, EPT."),
+    ((1, "protons", "STEP"), "there is no protons STEP."),
+    ((1, "ions", ""), "Event 1, ions of the event list: there is no ions. The particles"),
 ])
-def test_set_end_time_before_the_background_or_after_the_data(tool, end, message):
-    before = end_time(tool)
-    with pytest.raises(ValueError, match=f"The end time of event 1 ?{message}"):
-        tool.set_end_time(1, end)
-    assert end_time(tool) == before
+def test_check_names_of_unknown_particles_and_sensors(key, message):
+    bg = BackgroundWindows(ranges(1), windows({key: (T0, T0 + 3 * HOUR)}))
+    with pytest.raises(ValueError, match=message):
+        bg.check_names({"electrons": ["HET"], "protons": ["HET", "EPT"]})
 
 
-def test_reset_end_time_and_bg_window_separately(tool):
-    tool.set_end_time(1, T0 + 24 * HOUR)
-    tool.set_bg_window(1, T0 - HOUR, T0 - 30 * MINUTE)
-    tool.reset_bg_window(1)
-    assert window(tool)[2] == "default" and end_time(tool)[1] == "set"
-    tool.set_bg_window(1, T0 - HOUR, T0 - 30 * MINUTE)
-    tool.reset_end_time(1)
-    assert end_time(tool) == [pd.Timestamp(T0 + 48 * HOUR), "default"] and window(tool)[2] == "set"
+def test_check_names_of_the_same_particle_and_sensor_twice():
+    bg = BackgroundWindows(ranges(1), windows({(1, "protons", "HET"): (T0, T0 + 3 * HOUR),
+                                               (1, "Protons", "HET"): (T0, T0 + 4 * HOUR)}))
+    with pytest.raises(ValueError, match="Event 1, protons HET has more than one background window"):
+        bg.check_names({"protons": ["HET"]})
 
 
-def test_set_end_time_changes_the_analysis(tool):
-    # with the end time before the rise of the flux, there is no onset
-    tool.set_end_time(1, T0 - MINUTE)
-    tool.run_onsets()
-    assert tool.df_results["Onset Time"].isna().all()
+def test_to_frame_lists_the_window_of_each_event_first():
+    bg = BackgroundWindows(ranges(2, 1), windows({(1, "protons", "HET"): (T0, T0 + 3 * HOUR),
+                                                  (2, "", ""): (T0 + 25 * HOUR, T0 + 27 * HOUR)}), DEFAULT)
+    frame = bg.to_frame()
+    assert list(frame.index) == [(2, "", ""), (1, "", ""), (1, "protons", "HET")]
+    assert list(frame["Source"]) == ["event list", "default", "event list"]
 
 
-def test_save_events_keeps_the_end_time(tool, tmp_path):
-    tool.set_end_time(1, T0 + 47 * HOUR)
-    path = str(tmp_path / "saved.csv")
-    tool.save_events(path)
-    events = read_events(path, tool.params)
-    assert events.loc[1, "End Time"] == pd.Timestamp(T0 + 47 * HOUR)
-    assert list(events.loc[1, ["BG Window Source", "End Time Source"]]) == ["event list", "event list"]
+def test_event_list_with_the_windows_of_particles_and_sensors():
+    times = pd.DataFrame({"Start Time": [T0, T0 + 24 * HOUR], "End Time": [T0 + 30 * HOUR, T0 + 54 * HOUR]},
+                         index=pd.Index([1, 2], name="Event No"))
+    bg = BackgroundWindows(times, windows({(1, "protons", "HET"): (T0, T0 + 3 * HOUR)}), DEFAULT)
+    rows = bg.event_list(times)
+    assert list(rows.columns) == ["Particle", "Sensor", "Start Time", "BG Start", "BG End", "End Time"]
+    assert list(rows.index) == [1, 1, 2]
+    assert list(rows.iloc[0]) == ["", "", T0, T0, T0 + 2 * HOUR, T0 + 30 * HOUR]
+    assert list(rows.iloc[1, :2]) == ["protons", "HET"]
+    assert list(rows.iloc[1, 3:5]) == [T0, T0 + 3 * HOUR]
+    # the times of the event only in its row
+    assert pd.isna(rows.iloc[1]["Start Time"]) and pd.isna(rows.iloc[1]["End Time"])
+
+
+def test_event_list_without_the_windows_of_particles_and_sensors():
+    times = pd.DataFrame({"Start Time": [T0], "End Time": [T0 + 30 * HOUR], "BG End": [T0 + HOUR]},
+                         index=pd.Index([1], name="Event No"))
+    rows = BackgroundWindows(times, default=DEFAULT).event_list(times)
+    assert list(rows.columns) == ["Start Time", "BG Start", "BG End", "End Time"]
+    assert list(rows.iloc[0]) == [T0, T0, T0 + 2 * HOUR, T0 + 30 * HOUR]
+
+
+# order_error and window_points
+
+def test_order_error():
+    assert order_error(T0, T0, T0 + HOUR, T0 + 2 * HOUR) is None
+    assert order_error(T0, T0 + HOUR, T0 + HOUR, T0 + 2 * HOUR).startswith("the times must be in the order")
+
+
+def test_window_points():
+    index = pd.date_range(T0, periods=6, freq="30min")
+    df = pd.DataFrame({"a": [1, 2, np.nan, 4, 5, 6], "b": [1, 2, 3, 4, 5, 6]}, index=index)
+    assert window_points(df, T0, T0 + 2 * HOUR) == 4
+    assert window_points(df["b"], T0, T0 + 2 * HOUR) == 5
+    assert window_points(index, T0 + HOUR, T0 + 2 * HOUR) == 3
