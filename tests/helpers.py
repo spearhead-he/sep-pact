@@ -56,7 +56,8 @@ def make_params(tmp_path, **parameters) -> SEPPACT_parameters:
     folders = {name: str(tmp_path / name) for name in ("inputs", "data", "intermediate_states", "plots", "outputs")}
     (tmp_path / "inputs").mkdir(exist_ok=True)
     defaults = {"file_events": os.path.join(folders["inputs"], "events.csv"),
-                "file_shocks": os.path.join(folders["inputs"], "shocks.dat"), "dir_data": folders["data"],
+                "file_shocks": os.path.join(folders["inputs"], "shocks.dat"), "shock_source": None,
+                "dir_data": folders["data"],
                 "dir_saves": folders["intermediate_states"], "dir_plots": folders["plots"], "dir_outputs": folders["outputs"]}
     defaults.update(parameters)
     return SEPPACT_parameters(**defaults)

@@ -132,6 +132,18 @@ def test_fluence_ends_at_a_shock(tmp_path, monkeypatch):
     assert result(tool, "protons", "8 MeV", "Fluence End") == pd.Timestamp(shock)
 
 
+def test_no_fluence_without_points_before_a_shock(tmp_path, monkeypatch):
+    tool = run(synthetic_tool(tmp_path, monkeypatch))
+    onset = result(tool, "protons", "8 MeV", "Onset Time")
+    # a shock 1 minute after the onset: at 30 minutes, no point from the onset to the shock (on the 30-minute grid)
+    assert onset.minute % 30 != 0
+    tool.shocktimes = pd.Series([onset + timedelta(minutes=1)])
+    tool.run_peaks()
+    tool.run_fluences()
+    assert np.isnan(series_value(tool, "protons", "8 MeV", 30, "sun", "Fluence"))
+    assert pd.isna(series_value(tool, "protons", "8 MeV", 30, "sun", "Fluence End"))
+
+
 def test_fluence_starting_before_the_onset_is_not_chosen(tmp_path, monkeypatch):
     real = analysis.fluence_interval
 

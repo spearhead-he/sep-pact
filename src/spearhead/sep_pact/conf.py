@@ -3,6 +3,8 @@ from dataclasses import dataclass, field, fields
 from datetime import datetime, timedelta
 from typing import ClassVar
 
+from .shocks import SHOCK_SOURCES
+
 
 def default_group_options() -> dict:
     """Returns the default energy channel groups of HET, per particle"""
@@ -67,13 +69,13 @@ class SEPPACT_parameters:
     VIEWINGS: ClassVar[tuple] = ("sun", "asun", "north", "south")
     PARTICLES: ClassVar[tuple] = ("electrons", "protons")
     SENSORS: ClassVar[tuple] = ("HET",)
+    SHOCK_SOURCES: ClassVar[tuple] = tuple(SHOCK_SOURCES)
 
     # Files and folders
     # event list: Event No, then Reference Time, or Start Time and End Time with optionally BG Start and BG End, and
     # optionally Particle and Sensor for the rows of the background windows of particles and sensors;
     # without an event list (""), the events are date_ranges
     file_events: str = "inputs/events_example.csv"
-    file_shocks: str = "inputs/shocks.dat"     # interplanetary shock list from ipshocks.helsinki.fi
     # onset corrections saved by save_corrections(), applied to the chosen onsets; "" for none
     file_corrections: str = ""
     dir_data: str = "data"                     # downloaded EPD files
@@ -83,6 +85,13 @@ class SEPPACT_parameters:
 
     # Events without an event list: [(start, end)] of each event, as datetime
     date_ranges: list[tuple] = field(default_factory=list)
+
+    # Shocks: the analysis of a channel group ends at the first shock after its onset. The shocks are those of the
+    # shock list online, of the shock list file and the custom ones, without the removed ones
+    shock_source: str | None = "SODA"          # shock list online: "SODA", "IRFU" or None (see shocks.SHOCK_SOURCES)
+    file_shocks: str = ""                      # ipshocks list (.dat), IRFU list (.txt) or CSV with Shock Time; "" for none
+    shock_times: list[datetime] = field(default_factory=list)
+    removed_shocks: list[datetime] = field(default_factory=list)
 
     # Event windows
     # the data of an event with a Reference Time start and end this long before and after it
@@ -147,6 +156,8 @@ class SEPPACT_parameters:
                                                  "bg_end_after_start", "min_plot_window", "reference_onset_window",
                                                  "peak_window_min")},
         "date_ranges": "_check_date_ranges",
+        "shock_source": "_check_shock_source",
+        **{name: "_check_times" for name in ("shock_times", "removed_shocks")},
         **{name: "_check_count" for name in ("onset_points", "fluence_points", "download_tries")},
         "viewings": "_check_viewings",
         "fallback_viewing": "_check_fallback_viewing",
@@ -170,6 +181,15 @@ class SEPPACT_parameters:
             if date_range[0] >= date_range[1]:
                 raise ValueError(f"Event {i} of {name}: the start ({date_range[0]}) must be before the end "
                                  f"({date_range[1]}).")
+
+    def _check_shock_source(self, name: str, value) -> None:
+        if value is not None and value not in self.SHOCK_SOURCES:
+            raise ValueError(f"{name} must be one of {', '.join(self.SHOCK_SOURCES)}, or None, not {value!r}.")
+
+    @staticmethod
+    def _check_times(name: str, value) -> None:
+        if not all(isinstance(t, datetime) for t in value):
+            raise TypeError(f"{name} must be a list of datetime, not {value!r}.")
 
     @staticmethod
     def _check_count(name: str, value) -> None:

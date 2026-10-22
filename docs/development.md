@@ -20,7 +20,8 @@ The tests are in `tests/`, one file per part of the tool:
 | File | Tests |
 |---|---|
 | `test_parameters.py` | Parameters: defaults, the checks of each value and their messages, unknown names, the checks between parameters, the reference channel |
-| `test_inputs.py` | The shock list and the event list: its layouts and examples, the rows of particles and sensors and the times given more than once, the default windows, the order of the times, the data period, the date ranges, invalid files and former Onset Time lists |
+| `test_shocks.py` | The shocks: the SODA and IRFU lists and their downloads, the formats of the shock list files, their combination and the events outside the lists |
+| `test_inputs.py` | The shocks of the parameters and their warnings, and the event list: its layouts and examples, the rows of particles and sensors and the times given more than once, the default windows, the order of the times, the data period, the date ranges, invalid files and former Onset Time lists |
 | `test_background.py` | The background windows per event, particle and sensor (`background.py`): the rows of particles and sensors in the event list, the last of the times given more than once and its message, the fallback to the window of the particle and of the event, setting and resetting the windows, the default window, the names of the particles and sensors, and the event list with the windows |
 | `test_event_times.py` | The event times: where the background window and end time come from, setting and resetting them, invalid times, the points of the window and their warnings, the effect on the onsets, and `save_events()` |
 | `test_data.py` | The channel layout, the grouping of the channels, the download with its cache and retries, the resampling |
@@ -33,7 +34,7 @@ The tests are in `tests/`, one file per part of the tool:
 | `test_notebook.py` | The notebook interface without a browser: the fields of the form and their errors, the viewings and resolutions, the summaries of the input files, the channel group editor, and the steps: the event times with their sliders, the event viewer with the onset corrections, and saving the event list and the corrections |
 | `test_end_to_end.py` | The example event list, from the download of the data to the results and the plot (network) |
 
-All the tests except the end-to-end test run offline, with synthetic data built so that the expected results are known (`tests/helpers.py`): a constant background with a linear rise and decay, and a fake `epd_load` that returns data shaped like the real one. The end-to-end test downloads data and is marked `network`; it runs after the offline tests.
+The offline tests read the shock lists online from their copies in `tests/data/` (`tests/conftest.py`), which also has the ipshocks list and a CSV shock list of the tests. All the tests except the end-to-end test run offline, with synthetic data built so that the expected results are known (`tests/helpers.py`): a constant background with a linear rise and decay, and a fake `epd_load` that returns data shaped like the real one. The end-to-end test downloads data and is marked `network`; it runs after the offline tests.
 
 To run all the tests, from the base directory of the repository:
 

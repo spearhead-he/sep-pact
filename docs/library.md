@@ -42,7 +42,7 @@ tool.save_results()
 print(tool.df_results)
 ```
 
-The script reads `inputs/events_example.csv` and `inputs/shocks.dat`, writes the plots to `plots/` and the tables to `outputs/`, relative to the working folder.
+The script reads `inputs/events_example.csv`, downloads the SODA shock list, writes the plots to `plots/` and the tables to `outputs/`, relative to the working folder.
 
 ## Parameters
 
@@ -68,7 +68,7 @@ params.check()
 
 | Method | Step |
 |---|---|
-| `run_inputs()` | Reads the shock list and the events: the event list, or `date_ranges` without one |
+| `run_inputs()` | Reads the events (the event list, or `date_ranges` without one) and the shocks, and prints the warnings about the shocks |
 | `run_data(redownload=False)` | Loads the flux of the channel groups from the cache, or downloads it (always with `redownload=True`) and resamples it |
 | `run_onsets()` | Detects the onsets of every resolution and viewing (`calculate_onsets()`), and chooses one per event and channel group (`select_onsets()`) |
 | `run_spikes()` | Finds the spikes after the chosen onsets |
@@ -144,6 +144,7 @@ After the steps, the results are attributes of the `SEPPACT` object:
 |---|---|
 | `events` | The events: `Start Time`, `BG Start`, `BG End`, `End Time` and `Reference Time` (if given), with the default windows filled in, the period of data (`Plot Start`, `Plot End`), and where the background window and end time come from (`BG Window Source`, `End Time Source`) |
 | `bg_windows` | The background windows of the events and of their particles and sensors, a `BackgroundWindows` (see [Event times](#event-times)) |
+| `shocks` | The shocks: `Shock Time` and `Source` (`SODA`, `IRFU`, the name of the shock list file, or `custom`), sorted by time, without `removed_shocks` |
 | `shocktimes` | The times of the shocks (`pandas.Series`) |
 | `dfs_flux` | The flux of the channel groups: `dfs_flux[particle][sensor][resolution]` is a DataFrame indexed by event number and time, with the columns (viewing, group) |
 | `df_series` | The results of every series: one row per event, particle, sensor, channel group (`Energy Label`), resolution and viewing (see below) |
@@ -214,7 +215,8 @@ tool.df_results           # the same as tool.seppact.df_results
 |---|---|
 | `conf` | `SEPPACT_parameters`, and the default channel groups and spike thresholds |
 | `background` | `BackgroundWindows`, the background windows per event, particle and sensor, and `split_event_rows()`, the rows of an event list with the windows of particles and sensors; it uses only pandas |
-| `inputs` | `read_shocks(path)`, `read_events(path, params)`, `make_events(params)` and `load_events(params)` (the event list, or the date ranges, and their `BackgroundWindows`), `read_event_list(path)`, `EVENT_LIST_LAYOUTS`, the accepted columns of the event list, and `read_corrections(path)` with `CORRECTION_COLUMNS`, the file of onset corrections |
+| `shocks` | `download_shocks(source)` (the shock lists online of `SHOCK_SOURCES`), `read_shock_file(path)` (the formats of `SHOCK_FILE_FORMATS`), `parse_soda()`, `parse_irfu()`, `parse_ipshocks()`, `combine_shocks()` and `events_outside()`; it uses only pandas and the standard library |
+| `inputs` | `load_shocks(params)` and `shock_warnings(shocks, events)`, `read_events(path, params)`, `make_events(params)` and `load_events(params)` (the event list, or the date ranges, and their `BackgroundWindows`), `read_event_list(path)`, `EVENT_LIST_LAYOUTS`, the accepted columns of the event list, and `read_corrections(path)` with `CORRECTION_COLUMNS`, the file of onset corrections |
 | `data` | `load()`, which returns the EPD data of each particle as `ParticleData` (the flux with the channel numbers as columns, and the energies of the channels), `load_energies()`, `group_channels_de()`, `flux_cache_file()`, `download_data()` and `resample_flux()`: the EPD data, the flux of the channel groups and its cache |
 | `analysis` | `SEPPACT`, and the functions of the steps: `onset_detection_sigma()` (which returns the onset, the background start and end, and the background level and threshold), `quality_analysis()`, `choose_onset()`, `choose_peak()`, `choose_fluence()`, `detect_spikes()`, `remove_spikes()`, `get_peak_flux()`, `fluence_interval()`, `peak_search_end()` and `shocks_in_range()` |
 | `views` | `plot_event()`, `plot_background()` and `event_plot_filename()` |

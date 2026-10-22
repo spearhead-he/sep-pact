@@ -4,7 +4,8 @@ Modules:
 - analysis: SEPPACT, which runs the steps of the analysis and keeps their results, and the functions of each step
   (onset detection, data quality, spikes, peak flux, fluence)
 - conf: SEPPACT_parameters, the parameters of the analysis
-- inputs: reading of the event list, the shock list and the file of onset corrections
+- inputs: reading of the event list, the shocks of the parameters and the file of onset corrections
+- shocks: the shock lists online (SODA, IRFU), the shock list files and the combination of the shocks
 - background: BackgroundWindows, the background windows per event, particle and sensor, and the rows of particles and
   sensors in the event list (independent of the rest of the package)
 - data: loading of the EPD data, the flux of the channel groups, its cache and resampling

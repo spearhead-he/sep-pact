@@ -1,24 +1,66 @@
-"""Tests of the input files: the shock list and the event list"""
+"""Tests of the inputs: the event list and the shocks of the parameters"""
 from datetime import datetime, timedelta
 
 import pandas as pd
 import pytest
 
 from spearhead.sep_pact import SEPPACT_parameters
-from spearhead.sep_pact.inputs import EVENT_LIST_LAYOUTS, make_events, read_event_list, read_events, read_shocks
+from spearhead.sep_pact.inputs import (EVENT_LIST_LAYOUTS, load_shocks, make_events, read_event_list, read_events,
+                                       shock_warnings)
 from tests.helpers import T0, make_params, write_events, write_shocks
 
 
-def test_read_shocks_skips_the_comments(tmp_path):
-    times = [datetime(2021, 6, 13, 10, 8, 41), datetime(2021, 7, 18, 17, 57, 52)]
-    shocks = read_shocks(write_shocks(tmp_path, times))
-    assert list(shocks) == [pd.Timestamp(t) for t in times]
+def test_load_shocks_of_all_the_sources(tmp_path):
+    params = make_params(tmp_path, shock_source="SODA", shock_times=[datetime(2021, 11, 2, 12)],
+                         file_shocks=write_shocks(tmp_path, [datetime(2021, 6, 13, 10, 8, 41)]))
+    shocks, warnings = load_shocks(params)
+    assert warnings == []
+    assert shocks["Shock Time"].is_monotonic_increasing
+    assert shocks["Source"].value_counts().to_dict() == {"SODA": 18, "shocks.dat": 1, "custom": 1}
+    assert shocks.loc[shocks["Source"] == "custom", "Shock Time"].tolist() == [pd.Timestamp(2021, 11, 2, 12)]
 
 
-def test_read_shocks_of_the_repository():
-    shocks = read_shocks("inputs/shocks.dat")
-    assert len(shocks) > 0
-    assert shocks.iloc[0] == pd.Timestamp(2021, 6, 13, 10, 8, 41)
+def test_load_shocks_without_the_removed_ones(tmp_path):
+    params = make_params(tmp_path, shock_source="SODA", file_shocks="", removed_shocks=[datetime(2021, 5, 4, 16, 26, 57)])
+    shocks, _ = load_shocks(params)
+    assert len(shocks) == 17 and pd.Timestamp(2021, 5, 4, 16, 26, 57) not in shocks["Shock Time"].tolist()
+
+
+def test_load_shocks_without_a_connection(tmp_path, monkeypatch):
+    import spearhead.sep_pact.shocks as module
+
+    def no_connection(url):
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(module, "_get", no_connection)
+    params = make_params(tmp_path, shock_source="IRFU", file_shocks="", shock_times=[datetime(2021, 11, 2)])
+    shocks, warnings = load_shocks(params)
+    assert shocks["Source"].tolist() == ["custom"]
+    assert warnings == ["The shock list IRFU could not be downloaded (connection refused); it is left out. The data "
+                        "server may be unavailable; try again later."]
+
+
+def test_load_shocks_without_any(tmp_path):
+    shocks, warnings = load_shocks(make_params(tmp_path, file_shocks=""))
+    assert shocks.empty and list(shocks.columns) == ["Shock Time", "Source"] and warnings == []
+
+
+def shocks_at(*times, source="SODA") -> pd.DataFrame:
+    return pd.DataFrame({"Shock Time": pd.to_datetime(list(times)), "Source": source})
+
+
+def test_shock_warnings(tmp_path):
+    events = read_events(write_events(tmp_path, {1: {"Reference Time": T0}, 2: {"Reference Time": T0 + 30 * HOUR},
+                                                 3: {"Reference Time": T0 + 300 * HOUR}}), make_params(tmp_path))
+    assert shock_warnings(shocks_at(T0 - 10 * HOUR, T0 + 400 * HOUR), events) == []
+    assert shock_warnings(shocks_at(T0 - 10 * HOUR, T0 + 100 * HOUR), events) == [
+        "1 event (3) is not within the shock lists (2021-01-01 to 2021-01-05): the shocks during it may be missing."]
+    assert shock_warnings(shocks_at(T0 + 100 * HOUR, T0 + 101 * HOUR), events)[0].startswith(
+        "3 events (1, 2, 3) are not within the shock lists")
+    assert shock_warnings(shocks_at(T0, source="custom"), events) == [
+        "There are only custom shocks: the other shocks during the events are not taken into account."]
+    assert shock_warnings(shocks_at(), events) == [
+        "There are no shocks: the analysis of each channel group goes on to the end time of its event."]
 
 
 HOUR = timedelta(hours=1)

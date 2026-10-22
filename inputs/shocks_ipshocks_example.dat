@@ -1,0 +1,26 @@
+# Interplanetary shocks list from IPShocks.com
+# Generated on 14.10.2025
+# Columns:
+# Year
+# Month (1-12)
+# Day (1-31)
+# Hour (0-23)
+# Minute (0-59)
+# Second (0-59)
+# Spacecraft
+# Shock type
+# Magnetic field ratio
+# Speed jump (km/s)
+# Proton density ratio
+# Proton temperature ratio
+# Alfven speed upstream (km/s)
+# Magnetosonic speed upstream (km/s)
+# Plasma beta upstream
+# Shock normal X
+# Shock normal Y
+# Shock normal Z
+# Shock theta (degrees)
+# Shock speed (km/s)
+# Magnetosonic Mach number
+2021;10;30;22; 2; 8;     SolO;FF;4.05; 88.77; 3.18; 4.16; 20.45; 59.60;10.14; 0.72; 0.00;-0.69;46.03; 392.71; 2.58
+2021;11; 3;14; 4;28;     SolO;FF;2.39; 87.97; 2.15; 1.56; 75.01;100.86; 0.98; 0.60;-0.43;-0.68;52.16; 519.95; 2.52
