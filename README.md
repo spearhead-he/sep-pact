@@ -62,7 +62,7 @@ tool.save_results()      # results.csv and the plots
 2. Run the steps: check the background windows and end times in the event times step, and the events in the event viewer, where the onsets can be corrected.
 3. Find the results in `outputs/results.csv` and the plots in `plots/`.
 
-The data are downloaded into `data/` the first time. The flux of the channel groups is cached in `intermediate_states/`, and loaded from there when the notebook is run again with the same events and data settings.
+The data are downloaded into `data/` the first time. For lists of many events, the flux of the channel groups can be cached in `intermediate_states/` (Data tab, Advanced), so that the loaded events are kept if the data step stops and later runs load them from there.
 
 The [user guide](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md) describes the parameters, the input files, the steps of the notebook and the results.
 

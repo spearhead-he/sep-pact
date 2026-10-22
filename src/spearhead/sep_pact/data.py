@@ -14,6 +14,8 @@ from typing import NamedTuple
 import pandas as pd
 from solo_epd_loader import epd_load
 
+from .inputs import count
+
 # prefix of the flux columns of each particle in the EPD data; the protons of EPT are "Ion"
 PARTICLE_PREFIX = {
     "protons": "H",
@@ -121,20 +123,35 @@ def group_channels_de(df_to_group: pd.DataFrame,
     return df_grouped
 
 
-def flux_cache_file(events: pd.DataFrame,
-                    level: str,
-                    viewings: list[str],
-                    group_options: dict,
-                    folder: str) -> str:
-    """Returns the cache file of the flux DataFrames, named after the settings that the data depend on"""
+# the cache of the flux of the channel groups in dir_saves: {key of an event and the data settings: its flux}
+CACHE_FILE = "flux_cache.pkl"
+# the cache is saved after this many newly loaded events, at the end, and when the data step stops
+SAVE_EVERY = 10
+
+
+def event_cache_key(row: pd.Series, level: str, viewings: list[str], group_options: dict) -> str:
+    """Returns the key of the flux of an event in the cache, from the settings that it depends on: the data level, the
+    viewings, the channel groups and the times of the event that its data are loaded for"""
     settings = {
         "level": level,
         "viewings": viewings,
         "group_options": group_options,
-        "events": events[["BG Start", "End Time", "Plot Start", "Plot End"]].astype(str).to_dict(orient="split")
+        "event": row[["BG Start", "End Time", "Plot Start", "Plot End"]].astype(str).to_dict(),
     }
-    key = hashlib.sha1(json.dumps(settings, sort_keys=True, default=str).encode()).hexdigest()[:10]
-    return pjoin(folder, f"dfs_flux_{level}_{key}.pkl")
+    return hashlib.sha1(json.dumps(settings, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def _renumbered(flux: dict, event_no: int) -> dict:
+    """Returns the flux of an event from the cache, {particle: {sensor: DataFrame}}, with its number in the event list,
+    which can differ from the one it was cached with"""
+    return {particle: {sensor: frame.rename(index=lambda _: event_no, level="Event No")
+                       for sensor, frame in by_sensor.items()} for particle, by_sensor in flux.items()}
+
+
+def _write_cache(path: str, entries: dict) -> None:
+    """Writes the cache through a temporary file, so that a stopped write does not damage it"""
+    pd.to_pickle(entries, f"{path}.tmp")
+    os.replace(f"{path}.tmp", path)
 
 
 def _load_with_retries(row: pd.Series,
@@ -191,6 +208,27 @@ def _count_files(path: str) -> int:
     return sum(len(files) for _, _, files in os.walk(path))
 
 
+def _load_event(event_no: int, row: pd.Series, level: str, viewings: list[str], group_options: dict, energies: dict,
+                path: str, tries_max: int) -> dict:
+    """Returns the flux of the channel groups of an event, {particle: {sensor: DataFrame}}, indexed by event number and
+    time, with the columns (viewing, group)"""
+    particles, sensors, _, sensors_all = channel_layout(group_options)
+    flux = {particle: {sensor: pd.DataFrame([]) for sensor in sensors[particle]} for particle in particles}
+    for viewing in viewings:
+        for sensor in sensors_all:
+            data, startdate, enddate = _load_with_retries(row, sensor, level, viewing, path, tries_max)
+            for particle in particles:
+                groups = {label: spec for label, spec in group_options[particle].items() if spec["sensor"] == sensor}
+                if not groups:
+                    continue
+                df_temp = _group_event_flux(data[particle], startdate, enddate, groups,
+                                            energies[sensor][particle]["Bin Width"])
+                df_temp = pd.concat({viewing: pd.concat({event_no: df_temp}, axis="index")}, axis="columns")
+                df_temp.index.names = ["Event No", "Datetime"]
+                flux[particle][sensor] = _add_flux(flux[particle][sensor], df_temp)
+    return flux
+
+
 def download_data(events: pd.DataFrame,
                   level: str,
                   viewings: list[str],
@@ -199,47 +237,55 @@ def download_data(events: pd.DataFrame,
                   path: str,
                   cache_folder: str,
                   tries_max: int,
-                  redownload: bool = False) -> dict:
-    """Returns the flux of the channel groups per particle, sensor and event, loaded from the cache if it exists"""
-    cache_file = flux_cache_file(events, level, viewings, group_options, cache_folder)
-    if not redownload:
-        if pexists(cache_file):
-            print(f"Loading the flux of the channel groups from the cache {cache_file}.")
-            return pd.read_pickle(cache_file)
-        print(f"No cache {cache_file} for these events and settings.")
-    particles, sensors, _, sensors_all = channel_layout(group_options)
-    dfs_flux = {particle: {sensor: {"no_resample": pd.DataFrame([])} for sensor in sensors[particle]}
-                for particle in particles}
-    n_events = f"{len(events)} event{'' if len(events) == 1 else 's'}"
-    print(f"Loading the {level} data of {n_events}; the files missing from {path} are downloaded.")
-    for position, (event_no, row) in enumerate(events.iterrows(), start=1):
-        current = {particle: {sensor: pd.DataFrame([]) for sensor in sensors[particle]} for particle in particles}
-        print(f"Event {event_no}", end="... ")
-        files_before = _count_files(path)
-        for viewing in viewings:
-            for sensor in sensors_all:
-                data, startdate, enddate = _load_with_retries(row, sensor, level, viewing, path, tries_max)
-                for particle in particles:
-                    groups = {label: spec for label, spec in group_options[particle].items() if spec["sensor"] == sensor}
-                    if not groups:
-                        continue
-                    df_temp = _group_event_flux(data[particle], startdate, enddate, groups,
-                                                energies[sensor][particle]["Bin Width"])
-                    df_temp = pd.concat({viewing: pd.concat({event_no: df_temp}, axis="index")}, axis="columns")
-                    df_temp.index.names = ["Event No", "Datetime"]
-                    current[particle][sensor] = _add_flux(current[particle][sensor], df_temp)
+                  cache: bool = False,
+                  redownload: bool = False) -> tuple[dict, dict]:
+    """Returns the flux of the channel groups per particle and sensor ({"no_resample": DataFrame}) of the events that
+    could be loaded, and {event number: error} of the events left out
 
-        # Add the current event dataframes to the main dataframes
-        for particle in particles:
-            for sensor in sensors[particle]:
-                previous = dfs_flux[particle][sensor]["no_resample"]
-                dfs_flux[particle][sensor]["no_resample"] = current[particle][sensor].copy() if previous.empty \
-                    else pd.concat([previous, current[particle][sensor]], axis="index")
-
-        downloaded = _count_files(path) - files_before
-        print(f"loaded{f', {downloaded} files downloaded' if downloaded else ''} ({position / len(events) * 100:.2f}%)")
-    pd.to_pickle(dfs_flux, cache_file)
-    return dfs_flux
+    The data are loaded from the files in path, the missing ones downloaded. With cache, the flux of each event is
+    kept in CACHE_FILE in cache_folder, and loaded from there in later runs (not with redownload); the cache is saved
+    every SAVE_EVERY newly loaded events, at the end, and when the loading stops. An event whose data cannot be
+    loaded is left out; if none can be, the error of the first one is raised.
+    """
+    cache_file = pjoin(cache_folder, CACHE_FILE)
+    if cache:
+        os.makedirs(cache_folder, exist_ok=True)
+    entries = pd.read_pickle(cache_file) if cache and pexists(cache_file) else {}
+    print(f"Loading the {level} data of {count(len(events), 'event')}; the files missing from {path} are downloaded"
+          + (f", and the flux is cached in {cache_file}." if cache else "."))
+    loaded, skipped, unsaved = {}, {}, 0
+    try:
+        for position, (event_no, row) in enumerate(events.iterrows(), start=1):
+            progress = f"({position / len(events) * 100:.2f}%)"
+            key = event_cache_key(row, level, viewings, group_options)
+            if cache and not redownload and key in entries:
+                loaded[event_no] = _renumbered(entries[key], event_no)
+                print(f"Event {event_no}... loaded from the cache {progress}")
+                continue
+            print(f"Event {event_no}", end="... ")
+            files_before = _count_files(path)
+            try:
+                loaded[event_no] = _load_event(event_no, row, level, viewings, group_options, energies, path, tries_max)
+            except Exception as error:
+                skipped[event_no] = error
+                print(f"left out: {error} {progress}")
+                continue
+            downloaded = _count_files(path) - files_before
+            print(f"loaded{f', {downloaded} files downloaded' if downloaded else ''} {progress}")
+            if cache:
+                entries[key] = loaded[event_no]
+                unsaved += 1
+                if unsaved == SAVE_EVERY:
+                    _write_cache(cache_file, entries)
+                    unsaved = 0
+    finally:
+        if unsaved:
+            _write_cache(cache_file, entries)
+    if not loaded:
+        raise next(iter(skipped.values()))
+    particles, sensors, _, _ = channel_layout(group_options)
+    return {particle: {sensor: {"no_resample": pd.concat([flux[particle][sensor] for flux in loaded.values()])}
+                       for sensor in sensors[particle]} for particle in particles}, skipped
 
 
 def resample_flux(dfs_flux: dict, resample_freqs: list[timedelta]) -> dict:

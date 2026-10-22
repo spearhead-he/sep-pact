@@ -1,4 +1,5 @@
-"""Tests of the data: channel layout, grouping of the channels, the download with its cache, and the resampling"""
+"""Tests of the data: channel layout, grouping of the channels, the download with the events left out and the cache,
+and the resampling"""
 import os
 from datetime import timedelta
 
@@ -8,10 +9,10 @@ import pytest
 
 import spearhead.sep_pact.data as data
 from spearhead.sep_pact.conf import default_group_options
-from spearhead.sep_pact.data import (ParticleData, channel_layout, download_data, flux_cache_file, group_channels_de, load,
-                                     load_energies, resample_flux)
+from spearhead.sep_pact.data import (CACHE_FILE, ParticleData, channel_layout, download_data, event_cache_key,
+                                     group_channels_de, load, load_energies, resample_flux)
 from spearhead.sep_pact.inputs import read_events
-from tests.helpers import OFFSET, T0, FakeEPD, epd_energies, make_params, profile, write_events
+from tests.helpers import OFFSET, T0, FailingEPD, FakeEPD, epd_energies, make_params, profile, write_events
 
 
 @pytest.fixture
@@ -67,17 +68,17 @@ def test_load_energies(monkeypatch):
     assert energies["HET"]["electrons"]["Bin Width"].tolist() == pytest.approx(epd_energies()["Electron_Bins_Width"])
 
 
-def test_flux_cache_file_depends_on_the_settings(events, tmp_path):
+def test_event_cache_key_depends_on_the_settings(events):
+    row = events.loc[1]
     groups = default_group_options()
-    name = flux_cache_file(events, "l2", ["sun"], groups, "cache")
-    assert name == flux_cache_file(events, "l2", ["sun"], default_group_options(), "cache")
-    assert os.path.basename(name).startswith("dfs_flux_l2_") and name.endswith(".pkl")
+    key = event_cache_key(row, "l2", ["sun"], groups)
+    assert key == event_cache_key(row.copy(), "l2", ["sun"], default_group_options())
     groups["protons"]["8 MeV"]["channels"] = [1, 2]
-    assert flux_cache_file(events, "l2", ["sun"], groups, "cache") != name
-    assert flux_cache_file(events, "l2", ["sun", "north"], default_group_options(), "cache") != name
-    later = events.copy()
+    assert event_cache_key(row, "l2", ["sun"], groups) != key
+    assert event_cache_key(row, "l2", ["sun", "north"], default_group_options()) != key
+    later = row.copy()
     later["End Time"] += timedelta(hours=1)
-    assert flux_cache_file(later, "l2", ["sun"], default_group_options(), "cache") != name
+    assert event_cache_key(later, "l2", ["sun"], default_group_options()) != key
 
 
 def energy_tables() -> dict:
@@ -88,9 +89,13 @@ def energy_tables() -> dict:
                     for particle, prefix in (("protons", "H"), ("electrons", "Electron"))}}
 
 
-def download(events, tmp_path, **kwargs):
+def download_with_skipped(events, tmp_path, **kwargs) -> tuple:
     return download_data(events, "l2", ["sun", "north"], default_group_options(), energy_tables(), "data",
                          str(tmp_path), 2, **kwargs)
+
+
+def download(events, tmp_path, **kwargs) -> dict:
+    return download_with_skipped(events, tmp_path, **kwargs)[0]
 
 
 def test_download_groups_the_channels_of_each_viewing(events, tmp_path, monkeypatch):
@@ -117,18 +122,112 @@ def test_download_of_ion_columns(events, tmp_path, monkeypatch):
     assert flux[("sun", "8 MeV")].max() > 50
 
 
+def test_download_of_a_particle_without_groups(events, tmp_path, monkeypatch):
+    monkeypatch.setattr(data, "epd_load", FakeEPD())
+    groups = {"electrons": default_group_options()["electrons"], "protons": {}}
+    flux, skipped = download_data(events, "l2", ["sun"], groups, energy_tables(), "data", str(tmp_path), 2)
+    assert list(flux["electrons"]["HET"]["no_resample"].columns) == [("sun", "1 MeV"), ("sun", "5.9930 - 18.8300 MeV")]
+    assert flux["protons"] == {} and skipped == {}
+
+
+def test_download_without_the_cache_writes_nothing(events, tmp_path, monkeypatch):
+    monkeypatch.setattr(data, "epd_load", FakeEPD())
+    download(events, tmp_path / "cache")
+    assert not os.path.exists(tmp_path / "cache")
+
+
 def test_download_writes_and_reads_the_cache(events, tmp_path, monkeypatch):
     fake = FakeEPD({("electrons", "sun"): T0})
     monkeypatch.setattr(data, "epd_load", fake)
-    first = download(events, tmp_path)
+    cache = tmp_path / "cache"
+    first = download(events, cache, cache=True)
     calls = len(fake.calls)
     assert calls == 2  # one per viewing
-    assert os.path.exists(flux_cache_file(events, "l2", ["sun", "north"], default_group_options(), str(tmp_path)))
-    second = download(events, tmp_path)
+    assert os.listdir(cache) == [CACHE_FILE]
+    second = download(events, cache, cache=True)
     assert len(fake.calls) == calls
     pd.testing.assert_frame_equal(first["electrons"]["HET"]["no_resample"], second["electrons"]["HET"]["no_resample"])
-    download(events, tmp_path, redownload=True)
+    download(events, cache, cache=True, redownload=True)
     assert len(fake.calls) == 2 * calls
+
+
+def times_of(*days) -> pd.DataFrame:
+    """Events with a Reference Time T0 + day, numbered from 1"""
+    return pd.concat([events_at(day, n) for n, day in enumerate(days, start=1)])
+
+
+def events_at(day: int, event_no: int) -> pd.DataFrame:
+    start = pd.Timestamp(T0) + timedelta(days=day)
+    return pd.DataFrame({"Start Time": [start], "BG Start": [start], "BG End": [start + timedelta(hours=1)],
+                         "End Time": [start + timedelta(hours=30)], "Plot Start": [start],
+                         "Plot End": [start + timedelta(hours=30)]}, index=pd.Index([event_no], name="Event No"))
+
+
+def test_cache_keeps_the_entries_of_other_events(tmp_path, monkeypatch):
+    fake = FakeEPD()
+    monkeypatch.setattr(data, "epd_load", fake)
+    download(times_of(0, 10), tmp_path, cache=True)
+    calls = len(fake.calls)
+    # a list with one of the events, now number 1, and a new one: only the new one is loaded
+    flux = download(times_of(10, 20), tmp_path, cache=True)
+    assert len(fake.calls) == calls + 2
+    assert len(pd.read_pickle(tmp_path / CACHE_FILE)) == 3
+    frame = flux["protons"]["HET"]["no_resample"]
+    assert frame.index.get_level_values("Event No").unique().tolist() == [1, 2]
+    pd.testing.assert_frame_equal(frame.loc[1], download(times_of(10), tmp_path)["protons"]["HET"]["no_resample"].loc[1])
+
+
+def test_cache_is_saved_every_10_events(tmp_path, monkeypatch):
+    monkeypatch.setattr(data, "epd_load", FakeEPD())
+    saves = []
+    write = data._write_cache
+    monkeypatch.setattr(data, "_write_cache", lambda path, entries: saves.append(len(entries)) or write(path, entries))
+    download(times_of(*range(0, 50, 2)), tmp_path, cache=True)
+    # after 10 and 20 events, and the last 5 at the end
+    assert saves == [10, 20, 25]
+    saves.clear()
+    # all from the cache: nothing to save
+    download(times_of(*range(0, 50, 2)), tmp_path, cache=True)
+    assert saves == []
+
+
+class StoppingEPD(FakeEPD):
+    """FakeEPD that stops the loading (as Ctrl+C or the stop button) at a given call"""
+
+    def __init__(self, stop_at: int):
+        super().__init__()
+        self.stop_at = stop_at
+
+    def __call__(self, *args, **kwargs) -> tuple:
+        if len(self.calls) == self.stop_at:
+            raise KeyboardInterrupt
+        return super().__call__(*args, **kwargs)
+
+
+def test_cache_is_saved_when_the_loading_stops(tmp_path, monkeypatch):
+    # two calls per event (one per viewing): stopped in the third event
+    monkeypatch.setattr(data, "epd_load", StoppingEPD(stop_at=4))
+    with pytest.raises(KeyboardInterrupt):
+        download(times_of(0, 10, 20), tmp_path, cache=True)
+    assert len(pd.read_pickle(tmp_path / CACHE_FILE)) == 2
+    assert not os.path.exists(tmp_path / f"{CACHE_FILE}.tmp")
+
+
+def test_download_leaves_out_the_events_without_data(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(data, "epd_load", FailingEPD([pd.Timestamp(T0) + timedelta(days=10, hours=5)]))
+    flux, skipped = download_with_skipped(times_of(0, 10, 20), tmp_path, cache=True)
+    assert list(skipped) == [2] and "No data found" in str(skipped[2])
+    assert flux["protons"]["HET"]["no_resample"].index.get_level_values("Event No").unique().tolist() == [1, 3]
+    out = capsys.readouterr().out
+    assert "Event 2... " in out and "left out: No data found from 2021-01-11 12:00:00 (66.67%)" in out
+    # the event left out is not in the cache, and is tried again
+    assert len(pd.read_pickle(tmp_path / CACHE_FILE)) == 2
+
+
+def test_download_fails_if_no_event_has_data(tmp_path, monkeypatch):
+    monkeypatch.setattr(data, "epd_load", FakeEPD(fail=100))
+    with pytest.raises(ValueError, match="No data found"):
+        download(times_of(0, 10), tmp_path)
 
 
 def test_download_retries_with_the_event_period(events, tmp_path, monkeypatch):
@@ -145,6 +244,7 @@ def test_download_fails_after_the_last_try(events, tmp_path, monkeypatch):
     monkeypatch.setattr(data, "epd_load", fake)
     with pytest.raises(ValueError, match="No data"):
         download(events, tmp_path)
+    assert len(fake.calls) == 2
 
 
 def test_resample_flux(events, tmp_path, monkeypatch):
@@ -174,16 +274,17 @@ def test_download_messages(events, tmp_path, monkeypatch, capsys):
     folder = str(tmp_path / "data")
     events = events.rename(index={1: 20})
 
-    def load_data():
-        download_data(events, "l2", ["sun", "north"], default_group_options(), energy_tables(), folder, str(tmp_path), 2)
+    def load_data(**kwargs):
+        download_data(events, "l2", ["sun", "north"], default_group_options(), energy_tables(), folder, str(tmp_path), 2,
+                      **kwargs)
         return capsys.readouterr().out
 
     out = load_data()
-    assert "No cache" in out and "for these events and settings" in out
     assert f"Loading the l2 data of 1 event; the files missing from {folder} are downloaded." in out
     # one file per viewing; the progress is the position of the event in the list, not its number
     assert "Event 20... loaded, 2 files downloaded (100.00%)" in out
-    assert "Loading the flux of the channel groups from the cache" in load_data()
+    assert f"and the flux is cached in {tmp_path / CACHE_FILE}." in load_data(cache=True)
+    assert "Event 20... loaded from the cache (100.00%)" in load_data(cache=True)
 
 
 def test_download_message_without_new_files(events, tmp_path, monkeypatch, capsys):

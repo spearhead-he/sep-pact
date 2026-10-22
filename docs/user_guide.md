@@ -64,8 +64,9 @@ With the defaults, an event with a Reference Time has data from 2 hours before t
 | Resolutions | `resample_freqs` | 2, 5, 10, 30 min | Resolutions of the analysis, chosen from 1, 2, 5, 10, 15, 30 and 60 min |
 | Spike threshold | `spike_thresholds` | 2.0 (2 and 5 min), 2.5 (10 min), 3.0 (30 min) | Smallest difference, in orders of magnitude, of a spike from both its neighbours, for each resolution |
 | Data folder | `dir_data` | `data` | Folder of the downloaded EPD files |
-| Cache folder | `dir_saves` | `intermediate_states` | Folder of the cached flux |
 | Download tries | `download_tries` | 2 | Tries of each download; the tries after the first load only the background start to the end time |
+| Cache the flux of the channel groups (Advanced) | `cache_data` | off | Keeps the flux of each event in the cache folder (see [Data](#data-step)). With 10 events or more, a note recommends it |
+| Cache folder (Advanced) | `dir_saves` | `intermediate_states` | Folder of the cache |
 
 The data level is `l2` (`level`).
 
@@ -249,7 +250,9 @@ The analysis uses the parameters of the form when the data step runs; after a ch
 
 The data of each event, viewing and sensor are downloaded from the Solar Orbiter Archive with [solo-epd-loader](https://github.com/jgieseler/solo-epd-loader) into `dir_data`, for the period from the background start to the end time, extended to `min_plot_window`. Files already in `dir_data` are not downloaded again. The channels of each group are combined, weighted by their energy widths.
 
-The result is cached in `dir_saves`, in a file named after the level, the viewings, the channel groups and the event windows. Running the notebook again with the same settings loads the cache; changing any of them creates a new cache file.
+The step shows the progress of each event. An event whose data cannot be loaded, after `download_tries` tries, is left out with its error, e.g. when the data server is unavailable or there are no data for its period, and the other events go on. At the end, the step lists the events left out; they are not analysed, and running the data step again tries them again. The [event list saved](#event-times-step) in the event times step keeps them. If no event can be loaded, the step stops with the error.
+
+**Cache** (`cache_data`, off by default; Advanced section of the Data tab): for event lists of many events. The flux of the channel groups of each event is kept in `flux_cache.pkl` in `dir_saves`, one entry per event, for its times, the level, the viewings and the channel groups. The file is saved every 10 newly loaded events, at the end, and when the data step stops (an error, or the stop button), so that the events already loaded are kept. Later runs load the events from the cache, and only the new or changed events from the data files. The file keeps the entries of events that are no longer used; delete it to clear the cache. Without the cache, every run loads the events from the data files in `dir_data`, which are downloaded only once.
 
 <a id="event-times-step"></a>
 ### Event times

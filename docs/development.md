@@ -24,7 +24,7 @@ The tests are in `tests/`, one file per part of the tool:
 | `test_inputs.py` | The shocks of the parameters and their warnings, and the event list: its layouts and examples, the rows of particles and sensors and the times given more than once, the default windows, the order of the times, the data period, the date ranges, invalid files and former Onset Time lists |
 | `test_background.py` | The background windows per event, particle and sensor (`background.py`): the rows of particles and sensors in the event list, the last of the times given more than once and its message, the fallback to the window of the particle and of the event, setting and resetting the windows, the default window, the names of the particles and sensors, and the event list with the windows |
 | `test_event_times.py` | The event times: where the background window and end time come from, setting and resetting them, invalid times, the points of the window and their warnings, the effect on the onsets, and `save_events()` |
-| `test_data.py` | The channel layout, the grouping of the channels, the download with its cache and retries, the resampling |
+| `test_data.py` | The channel layout, the grouping of the channels, the download with its retries, the events left out, the cache (its entries per event, saved every 10 events and when the loading stops), the resampling |
 | `test_onsets.py` | Onset detection, data quality, and the choice of the onset: resolution, viewing, reference window, copied onsets, onsets at the end of the background, shocks |
 | `test_spikes.py` | Spike detection with the threshold of each resolution, and spike removal |
 | `test_peaks_fluence.py` | Peak flux and fluence: the functions, the choice of the viewing and resolution, shocks |

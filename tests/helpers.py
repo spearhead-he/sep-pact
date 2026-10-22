@@ -156,6 +156,20 @@ class FakeEPD:
         return frames["protons"], frames["electrons"], epd_energies(self.proton_prefix)
 
 
+class FailingEPD(FakeEPD):
+    """FakeEPD without data in the periods that contain one of the given times"""
+
+    def __init__(self, missing: list, rises: dict | None = None):
+        super().__init__(rises)
+        self.missing = [pd.Timestamp(t) for t in missing]
+
+    def __call__(self, sensor, level, startdate, enddate, viewing, path, autodownload) -> tuple:
+        if any(pd.Timestamp(startdate) <= t <= pd.Timestamp(enddate) for t in self.missing):
+            self.calls.append({"startdate": startdate})
+            raise ValueError(f"No data found from {startdate}")
+        return super().__call__(sensor, level, startdate, enddate, viewing, path, autodownload)
+
+
 T0 = datetime(2021, 1, 1, 12, 0)  # reference time of the synthetic event in the event list, where it rises
 VIEWINGS = ("sun", "asun", "north", "south")
 

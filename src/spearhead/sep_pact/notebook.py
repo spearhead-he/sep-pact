@@ -17,7 +17,7 @@ from matplotlib import pyplot as plt
 
 from .analysis import SEPPACT
 from .conf import SEPPACT_parameters
-from .data import load_energies
+from .data import CACHE_FILE, SAVE_EVERY, load_energies
 from .inputs import (EVENT_LIST_LAYOUTS, count, event_list_layout, make_events, read_corrections, read_events,
                      shock_warnings)
 from .shocks import SHOCK_FILE_FORMATS, SHOCK_SOURCES, combine_shocks, download_shocks, read_shock_file
@@ -202,7 +202,7 @@ class SEPPACT_notebook:
         self.widgets["file_events"].observe(gray_out_ranges, names="value")
         gray_out_ranges()
         section_shocks = self._shocks_section()
-        self.widgets["file_events"].observe(lambda _: self._update_shocks(), names="value")
+        self.widgets["file_events"].observe(lambda _: self._events_changed(), names="value")
         layouts = "; ".join(", ".join(columns) for columns in EVENT_LIST_LAYOUTS.values())
         return widgets.VBox([
             _section("Event list", field_events,
@@ -256,7 +256,7 @@ class SEPPACT_notebook:
             if "file_events_info" in self.widgets:
                 self.widgets["file_events_info"].value = self._events_info(self.parameters.file_events)
             if "shock_list" in self.widgets:
-                self._update_shocks()
+                self._events_changed()
 
         def set_time(i, j, value):
             ranges[i][j] = value
@@ -406,18 +406,27 @@ class SEPPACT_notebook:
             sources["custom"] = pd.Series(pd.to_datetime(p.shock_times), dtype="datetime64[ns]")
         return sources
 
+    def _form_events(self) -> pd.DataFrame | None:
+        """Returns the events of the form, or None if they cannot be read"""
+        try:
+            # without the messages of the event list, which its summary shows
+            with redirect_stdout(StringIO()):
+                return make_events(self.parameters)
+        except (ValueError, KeyError, OSError):
+            return None
+
+    def _events_changed(self) -> None:
+        """Shows again what depends on the events: the shocks during them and the note on the cache"""
+        self._update_shocks()
+        self._update_cache_note()
+
     def _update_shocks(self) -> None:
         """Shows the shocks during the events (all of them without valid events), the number of removed shocks and the
         warnings about the shocks"""
         sources = self._shock_sources()
         shocks = combine_shocks(sources, self.parameters.removed_shocks)
         n_removed = len(combine_shocks(sources)) - len(shocks)
-        try:
-            # without the messages of the event list, which its summary shows
-            with redirect_stdout(StringIO()):
-                events = make_events(self.parameters)
-        except (ValueError, KeyError, OSError):
-            events = None
+        events = self._form_events()
         during = shocks
         if events is not None:
             in_events = shocks["Shock Time"].map(lambda t: ((events["Plot Start"] <= t) & (events["Plot End"] >= t)).any())
@@ -450,9 +459,34 @@ class SEPPACT_notebook:
             _section("Resolutions, and the spike threshold of each (orders of magnitude)", self._resolutions_widget()),
             _section("Download",
                      self._text("dir_data", "Data folder:", "Folder of the downloaded EPD files"),
-                     self._text("dir_saves", "Cache folder:", "Folder of the cached flux"),
                      self._number("download_tries", "Download tries:")),
+            self._cache_section(),
         ])
+
+    def _cache_section(self) -> widgets.VBox:
+        """The cache of the flux, off by default, with a note that recommends it for many events"""
+        wgt_cache = widgets.Checkbox(value=self.parameters.cache_data, indent=False,
+                                     description="Cache the flux of the channel groups in the cache folder",
+                                     layout=widgets.Layout(width="max-content"))
+        self.widgets["cache_note"] = widgets.HTML()
+        section = _section("Advanced",
+                           self._field(wgt_cache, "cache_data"),
+                           self._text("dir_saves", "Cache folder:", "Folder of the cached flux"),
+                           _note(f"The flux of each event is kept in {CACHE_FILE}, saved every {SAVE_EVERY} events and "
+                                 "when the data step stops, and later runs load it from there."),
+                           self.widgets["cache_note"])
+        wgt_cache.observe(lambda _: self._update_cache_note(), names="value")
+        self._update_cache_note()
+        return section
+
+    def _update_cache_note(self) -> None:
+        """Recommends the cache for SAVE_EVERY events or more, when it is off"""
+        events = self._form_events()
+        many = events is not None and len(events) >= SAVE_EVERY and not self.parameters.cache_data
+        self.widgets["cache_note"].value = (
+            '<span style="color: darkorange">' + html.escape(
+                f"{count(len(events), 'event')}: the cache is recommended, so that the loaded events are kept if the "
+                "data step stops, and later runs load them from the cache.") + "</span>") if many else ""
 
     def _viewings_widget(self) -> widgets.VBox:
         wgt_error = widgets.HTML()
@@ -724,6 +758,8 @@ class SEPPACT_notebook:
             advice = " The data server may be unavailable; try again later." if _is_connection_error(e) else ""
             display(widgets.HTML(_error_text(f"{e}.{advice}")))
             return
+        if self.seppact.skipped_events:
+            display(widgets.HTML(f'<span style="color: darkorange">{html.escape(self.seppact.skipped_message())}</span>'))
         display(self.seppact.events)
 
     def _has_data(self) -> bool:

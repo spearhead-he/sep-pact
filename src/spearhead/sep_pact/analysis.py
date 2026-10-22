@@ -9,7 +9,7 @@ import pandas as pd
 from .background import BGWindow, key_label, window_points
 from .conf import SEPPACT_parameters
 from .data import channel_layout, download_data, load_energies, resample_flux
-from .inputs import CORRECTION_COLUMNS, load_events, load_shocks, read_corrections, shock_warnings
+from .inputs import CORRECTION_COLUMNS, count, load_events, load_shocks, read_corrections, shock_warnings
 
 
 # the index of df_series, one row per series, and of df_results, one row per channel group of an event
@@ -354,6 +354,9 @@ class SEPPACT:
         self.shocktimes = None
         self.events = None
         self.bg_windows = None
+        # the events whose data could not be loaded, {event number: error}, and their rows of events
+        self.skipped_events = {}
+        self._skipped_rows = None
         self._input_end_times = None
         self.energies = None
         self.dfs_flux = None
@@ -458,6 +461,7 @@ class SEPPACT:
         the shocks"""
         p = self.params
         self.events, self.bg_windows = load_events(p)
+        self.skipped_events, self._skipped_rows = {}, self.events.iloc[:0]
         self.shocks, warnings = load_shocks(p)
         self.shocktimes = self.shocks["Shock Time"]
         for warning in warnings + shock_warnings(self.shocks, self.events):
@@ -466,25 +470,47 @@ class SEPPACT:
         self._input_end_times = self.events[["End Time", "End Time Source"]].copy()
 
     def run_data(self, redownload: bool = False) -> None:
-        """Loads the flux of the channel groups (from the cache, or downloads it), and resamples it"""
+        """Loads the flux of the channel groups (downloads the missing data files, and with cache_data uses the cache),
+        and resamples it; the events that cannot be loaded are left out of events, with their error in skipped_events,
+        and the others are analysed"""
         p = self.params
-        os.makedirs(p.dir_saves, exist_ok=True)
-        self.energies = load_energies(self.sensors_all,
-                                      p.level,
-                                      self.events.iloc[0]["Plot Start"],
-                                      self.events.iloc[0]["Plot End"],
-                                      p.viewings[0],
-                                      p.dir_data)
-        dfs_flux = download_data(self.events,
-                                 p.level,
-                                 p.viewings,
-                                 p.group_options,
-                                 self.energies,
-                                 p.dir_data,
-                                 p.dir_saves,
-                                 p.download_tries,
-                                 redownload=redownload)
+        if self.skipped_events:
+            # the events left out by a former run are tried again
+            self.events = pd.concat([self.events, self._skipped_rows]).reindex(self.bg_windows.ranges.index)
+        self.energies = self._load_energies()
+        dfs_flux, skipped = download_data(self.events,
+                                          p.level,
+                                          p.viewings,
+                                          p.group_options,
+                                          self.energies,
+                                          p.dir_data,
+                                          p.dir_saves,
+                                          p.download_tries,
+                                          cache=p.cache_data,
+                                          redownload=redownload)
+        self.skipped_events, self._skipped_rows = skipped, self.events.loc[list(skipped)]
+        if skipped:
+            self.events = self.events.drop(index=list(skipped))
+            print(self.skipped_message())
         self.dfs_flux = resample_flux(dfs_flux, p.resample_freqs)
+
+    def _load_energies(self) -> dict:
+        """Returns the channel energies, read from the data of the first event that has them"""
+        p = self.params
+        for _, row in self.events.iterrows():
+            try:
+                return load_energies(self.sensors_all, p.level, row["Plot Start"], row["Plot End"], p.viewings[0],
+                                     p.dir_data)
+            except ValueError as error:
+                last_error = error
+        raise last_error
+
+    def skipped_message(self) -> str:
+        """Returns the message about the events left out by the data step, with their errors"""
+        n = len(self.skipped_events)
+        errors = "; ".join(f"{event_no} ({error})" for event_no, error in self.skipped_events.items())
+        return (f"{count(n, 'event')} left out, as {'its' if n == 1 else 'their'} data could not be loaded: {errors}. "
+                f"Run the data step again to retry {'it' if n == 1 else 'them'}.")
 
     def bg_window(self, event_no: int, particle: str = "", sensor: str = "") -> BGWindow:
         """Returns the background window of the series of a particle and sensor in an event, (start, end, source,
@@ -580,7 +606,9 @@ class SEPPACT:
         """Writes the events with their times and background windows as a CSV event list (Event No, Start Time, BG
         Start, BG End, End Time, and Particle and Sensor if there are windows of particles and sensors), which can be
         given as file_events to use the same times again"""
-        rows = self.bg_windows.event_list(self.events[["Start Time", "End Time"]])
+        # with the events left out by the data step, in the order of the event list
+        times = pd.concat([self.events, self._skipped_rows])[["Start Time", "End Time"]]
+        rows = self.bg_windows.event_list(times.reindex(self.bg_windows.ranges.index))
         rows.to_csv(path, date_format="%Y-%m-%d %H:%M:%S")
 
     def run_onsets(self) -> None:
@@ -887,7 +915,9 @@ class SEPPACT:
         for i, (column, values) in enumerate(columns.items(), start=1):
             table.insert(table.columns.get_loc("Onset Corrected") + i, column, values)
         for column in ("Onset Resolution", "Peak Flux Resolution", "Fluence Resolution"):
-            table[column] = pd.to_timedelta(table[column]).dt.total_seconds() / 60
+            # a column without any resolution (no onset in any channel group) has no timedelta type
+            table[column] = np.nan if table[column].isna().all() \
+                else pd.to_timedelta(table[column]).dt.total_seconds() / 60
         return table
 
     def save_results(self) -> None:

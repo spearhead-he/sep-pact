@@ -7,7 +7,7 @@ import pytest
 
 from spearhead.sep_pact import SEPPACT
 from spearhead.sep_pact.inputs import read_events
-from tests.helpers import T0, bg_end_event, make_params, synthetic_tool, write_events, write_shocks
+from tests.helpers import T0, FailingEPD, bg_end_event, make_params, synthetic_tool, write_events, write_shocks
 
 HOUR = timedelta(hours=1)
 MINUTE = timedelta(minutes=1)
@@ -284,3 +284,15 @@ def test_event_list_with_the_window_of_an_unknown_particle(tool, tmp_path):
     with pytest.raises(ValueError, match="The event list .*: The background window of event 1, ions HET: there is no "
                                          "ions HET. The particles and their sensors are: electrons: HET; protons: HET."):
         tool.run_inputs()
+
+
+def test_save_events_keeps_the_events_left_out(tmp_path, monkeypatch):
+    events = {1: {"Reference Time": T0}, 2: {"Reference Time": T0 + timedelta(days=10)},
+              3: {"Reference Time": T0 + timedelta(days=20)}}
+    tool = synthetic_tool(tmp_path, monkeypatch, events=events, fake=FailingEPD([T0 + timedelta(days=10)]))
+    tool.set_end_time(3, T0 + timedelta(days=20, hours=40))
+    path = str(tmp_path / "saved.csv")
+    tool.save_events(path)
+    saved = read_events(path, tool.params)
+    assert list(saved.index) == [1, 2, 3]
+    assert saved.loc[3, "End Time"] == pd.Timestamp(T0 + timedelta(days=20, hours=40))
