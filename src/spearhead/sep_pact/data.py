@@ -243,7 +243,7 @@ def download_data(events: pd.DataFrame,
 
 
 def resample_flux(dfs_flux: dict, resample_freqs: list[timedelta]) -> dict:
-    """Returns the flux of each particle and sensor resampled to every resolution, from the cached flux
+    """Returns the flux of each particle and sensor resampled to every resolution, from the cached flux, in its type
 
     The cached flux (key "no_resample") is not kept.
     """
@@ -251,8 +251,11 @@ def resample_flux(dfs_flux: dict, resample_freqs: list[timedelta]) -> dict:
     for particle, by_sensor in dfs_flux.items():
         resampled[particle] = {}
         for sensor, frames in by_sensor.items():
+            flux = frames["no_resample"]
+            # in the type of the data (float32 for EPD), as before pandas 3.1, whose mean is float64
             resampled[particle][sensor] = {
-                resample_freq: frames["no_resample"].groupby(level="Event No").resample(resample_freq, level="Datetime").mean()
+                resample_freq: flux.groupby(level="Event No").resample(resample_freq, level="Datetime").mean()
+                .astype(flux.dtypes.to_dict())
                 for resample_freq in resample_freqs
             }
     return resampled
