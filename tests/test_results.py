@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from spearhead.sep_pact.analysis import RESULT_COLUMNS, SERIES_INDEX
-from tests.helpers import T0, FakeEPD, synthetic_tool
+from tests.helpers import T0, VIEWINGS, FailingEPD, FakeEPD, synthetic_tool
 
 
 @pytest.fixture
@@ -88,9 +88,55 @@ def test_plot_events(tool):
 
 
 def test_run_data_creates_the_cache_folder(tmp_path, monkeypatch):
-    tool = synthetic_tool(tmp_path, monkeypatch, dir_saves=str(tmp_path / "new" / "cache"))
-    assert len(os.listdir(tmp_path / "new" / "cache")) == 1
+    tool = synthetic_tool(tmp_path, monkeypatch, dir_saves=str(tmp_path / "new" / "cache"), cache_data=True)
+    assert os.listdir(tmp_path / "new" / "cache") == ["flux_cache.pkl"]
     assert tool.dfs_flux is not None
+
+
+def two_events() -> dict:
+    return {1: {"Reference Time": T0}, 2: {"Reference Time": T0 + timedelta(days=10)}}
+
+
+def test_run_data_leaves_out_the_events_without_data(tmp_path, monkeypatch, capsys):
+    rises = {(particle, viewing): T0 for particle in ("electrons", "protons") for viewing in VIEWINGS}
+    fake = FailingEPD([T0 + timedelta(days=10)], rises)
+    tool = synthetic_tool(tmp_path, monkeypatch, events=two_events(), fake=fake)
+    assert list(tool.skipped_events) == [2] and list(tool.events.index) == [1]
+    assert "1 event left out, as its data could not be loaded: 2 (No data found from" in capsys.readouterr().out
+    for step in (tool.run_onsets, tool.run_spikes, tool.run_peaks, tool.run_fluences):
+        step()
+    assert tool.results_table()["Event No"].unique().tolist() == [1]
+    # the event left out is tried again by the next data step
+    fake.missing = []
+    tool.run_data()
+    assert tool.skipped_events == {} and list(tool.events.index) == [1, 2]
+
+
+def test_run_data_reads_the_energies_of_the_first_event_with_data(tmp_path, monkeypatch):
+    tool = synthetic_tool(tmp_path, monkeypatch, events=two_events(), fake=FailingEPD([T0]))
+    assert list(tool.skipped_events) == [1] and list(tool.events.index) == [2]
+    assert list(tool.energies) == ["HET"]
+
+
+def test_results_table_without_any_onset(tmp_path, monkeypatch):
+    # flat flux: no onset in any channel group
+    tool = synthetic_tool(tmp_path, monkeypatch, fake=FakeEPD())
+    for step in (tool.run_onsets, tool.run_spikes, tool.run_peaks, tool.run_fluences):
+        step()
+    table = tool.results_table()
+    assert table["Onset Time"].isna().all()
+    for column in ("Onset Resolution", "Peak Flux Resolution", "Fluence Resolution"):
+        assert table[column].isna().all() and table[column].dtype == "float64"
+
+
+def test_run_data_fails_if_no_event_has_data(tmp_path, monkeypatch):
+    with pytest.raises(ValueError, match="No data found"):
+        synthetic_tool(tmp_path, monkeypatch, events=two_events(), fake=FakeEPD(fail=1000))
+
+
+def test_run_data_without_the_cache(tmp_path, monkeypatch):
+    tool = synthetic_tool(tmp_path, monkeypatch, dir_saves=str(tmp_path / "new" / "cache"))
+    assert not os.path.exists(tmp_path / "new") and tool.dfs_flux is not None
 
 
 def test_results_table_has_the_same_type_for_one_or_more_events(tmp_path, monkeypatch):
@@ -103,14 +149,3 @@ def test_results_table_has_the_same_type_for_one_or_more_events(tmp_path, monkey
     assert tool.dfs_flux["electrons"]["HET"][timedelta(minutes=2)].dtypes.iloc[0] == "float32"
     for column in ("Peak Flux", "Fluence", "Fluence Threshold"):
         assert tool.results_table()[column].dtype == "float64"
-
-
-def test_results_table_without_any_onset(tmp_path, monkeypatch):
-    # flat flux: no onset in any channel group
-    tool = synthetic_tool(tmp_path, monkeypatch, fake=FakeEPD())
-    for step in (tool.run_onsets, tool.run_spikes, tool.run_peaks, tool.run_fluences):
-        step()
-    table = tool.results_table()
-    assert table["Onset Time"].isna().all()
-    for column in ("Onset Resolution", "Peak Flux Resolution", "Fluence Resolution"):
-        assert table[column].isna().all() and table[column].dtype == "float64"

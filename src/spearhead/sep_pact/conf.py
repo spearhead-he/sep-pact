@@ -79,7 +79,7 @@ class SEPPACT_parameters:
     # onset corrections saved by save_corrections(), applied to the chosen onsets; "" for none
     file_corrections: str = ""
     dir_data: str = "data"                     # downloaded EPD files
-    dir_saves: str = "intermediate_states"     # cached flux DataFrames
+    dir_saves: str = "intermediate_states"     # cache of the flux of the channel groups, with cache_data
     dir_plots: str = "plots"                   # one figure per event
     dir_outputs: str = "outputs"               # result tables
 
@@ -109,6 +109,9 @@ class SEPPACT_parameters:
     resample_freqs: list[timedelta] = field(default_factory=lambda: [timedelta(minutes=m) for m in (2, 5, 10, 30)])
     group_options: dict = field(default_factory=default_group_options)
     download_tries: int = 2                    # the tries after the first load only the background start to the end time
+    # keep the flux of each event in dir_saves, so that the events loaded are kept if the data step stops, and later
+    # runs load them from there; useful for many events
+    cache_data: bool = False
 
     # Onset
     onset_sigma: float = 2                     # threshold = background mean + onset_sigma * background standard deviation

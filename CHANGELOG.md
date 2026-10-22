@@ -9,10 +9,12 @@ All notable changes of SEP-PACT. The format is based on [Keep a Changelog](https
 - Background windows of particles and sensors: an event list can have rows with the optional columns `Particle` and `Sensor`, whose `BG Start` and `BG End` are the background window of the channel groups of that particle (and sensor) in the event, instead of the window of the event. In the event times step, the new Window of dropdown sets them; in scripts, `set_bg_window()` and `reset_bg_window()` take a particle and sensor, and `bg_window()` gives the window of a series. See [Background windows of particles and sensors](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#bg-windows-of-particles).
 - `results.csv` columns `BG Start` and `BG End`, the background window of each channel group.
 - Shock sources: a shock list online (`shock_source`: [SODA](https://parker.gsfc.nasa.gov/shocks.html), the default, [IRFU](https://doi.org/10.5281/zenodo.11091062), or None), downloaded when the tool runs; a shock list file (`file_shocks`) in the ipshocks, IRFU or CSV (`Shock Time`) format; and custom shocks (`shock_times`), with "Add shock" in the form. The list of the shocks during the events, with their source, where shocks can be removed (`removed_shocks`). Warnings when there are no shocks and about the events outside the shock lists. In scripts, `tool.shocks` has the shocks with their source. Example shock list files in each format in `inputs/`. See [Shocks](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#shocks).
+- The data step goes on when the data of an event cannot be loaded: the event is left out with its error (`tool.skipped_events`), the others are analysed, and the step lists the events left out; running it again tries them again. `save_events()` keeps them. See [Data](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#data-step).
 - The user guide explains that the onset is never before the end of the background window, and that choosing the windows is up to the user ([Onset](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#onset-at-bg-end)).
 
 ### Changed
 
+- The cache of the flux is optional (`cache_data`, off by default; Data tab, Advanced section, with a note that recommends it for 10 events or more). It is one file, `flux_cache.pkl`, with an entry per event, saved every 10 events, at the end and when the data step stops; later runs load only the new or changed events from the data files. The former cache files (`dfs_flux_*.pkl`) are no longer used and can be deleted.
 - The default shocks are those of SODA, instead of the ipshocks list `inputs/shocks.dat` (70 shocks from 2021-06-13 to 2023-12-29), which is no longer in the repository; `file_shocks` is empty by default. SODA has 171 Solar Orbiter shocks from 2020-10-14 to 2025-02-28.
 - The rows of an event list with the same `Event No` are read as one event: each time is the last one given, with a message when the rows differ. Before, they were read as separate events with the same number.
 - `BG Window Source` in `results.csv` is the source of the window of the channel group.
@@ -28,6 +30,7 @@ All notable changes of SEP-PACT. The format is based on [Keep a Changelog](https
 
 - The results change where the shocks of SODA differ from those of the former shock list: on a list of 212 Solar Orbiter events, 73 of the 1060 rows of `results.csv`, in 31 events, have another onset (from the data quality check up to the shock), peak flux or fluence. To keep the former shocks, set the shock list online to None and give the former `shocks.dat` as the shock list file.
 - The tool needs an internet connection for the shock list online, as for the data.
+- The cache is off by default: for lists of many events, turn on `cache_data` (Data tab, Advanced). The former cache files in `intermediate_states/` (`dfs_flux_*.pkl`) are not used and can be deleted; the first run with the cache loads the events again from the data files.
 
 ## [0.3.0] - 2026-10-21
 

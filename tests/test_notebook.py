@@ -10,7 +10,7 @@ from ipywidgets import widgets
 import spearhead.sep_pact.data as data
 import spearhead.sep_pact.notebook as notebook
 from spearhead.sep_pact.notebook import SEPPACT_notebook
-from tests.helpers import T0, VIEWINGS, FakeEPD, bg_end_event, make_params, write_events, write_shocks
+from tests.helpers import T0, VIEWINGS, FailingEPD, FakeEPD, bg_end_event, make_params, write_events, write_shocks
 
 
 @pytest.fixture
@@ -183,6 +183,32 @@ def test_run_data_with_the_shocks(tmp_path, monkeypatch, shown):
     tool = make_tool(tmp_path, monkeypatch, shock_source="SODA", shock_times=[datetime(2021, 1, 2)])
     tool.run_data()
     assert tool.seppact.shocks["Source"].value_counts().to_dict() == {"SODA": 18, "shocks.dat": 1, "custom": 1}
+
+
+def test_cache_option_and_its_note(tmp_path, monkeypatch):
+    events = {n: {"Reference Time": T0 + timedelta(days=3 * n)} for n in range(1, 11)}
+    tool = make_tool(tmp_path, monkeypatch, events=events)
+    w = tool.widgets
+    assert tool.parameters.cache_data is False
+    assert "10 events: the cache is recommended" in w["cache_note"].value
+    w["cache_data"].value = True
+    assert tool.parameters.cache_data is True and w["cache_note"].value == ""
+    w["cache_data"].value = False
+    # fewer events: no recommendation
+    path = write_events(tmp_path, {1: {"Reference Time": T0}}, "one.csv")
+    w["file_events"].value = path
+    assert w["cache_note"].value == ""
+    w["file_events"].value = "missing.csv"
+    assert w["cache_note"].value == ""
+
+
+def test_run_data_shows_the_events_left_out(tmp_path, monkeypatch, shown):
+    events = {1: {"Reference Time": T0}, 2: {"Reference Time": T0 + timedelta(days=10)}}
+    rises = {(particle, viewing): T0 for particle in ("electrons", "protons") for viewing in VIEWINGS}
+    tool = make_tool(tmp_path, monkeypatch, fake=FailingEPD([T0 + timedelta(days=10)], rises), events=events)
+    tool.run_data()
+    assert "1 event left out, as its data could not be loaded: 2 (No data found" in shown_text(shown)
+    assert list(tool.events.index) == [1]
 
 
 def test_event_list_info(tmp_path, monkeypatch):
