@@ -122,6 +122,14 @@ def test_download_of_ion_columns(events, tmp_path, monkeypatch):
     assert flux[("sun", "8 MeV")].max() > 50
 
 
+def test_download_of_a_particle_without_groups(events, tmp_path, monkeypatch):
+    monkeypatch.setattr(data, "epd_load", FakeEPD())
+    groups = {"electrons": default_group_options()["electrons"], "protons": {}}
+    flux, skipped = download_data(events, "l2", ["sun"], groups, energy_tables(), "data", str(tmp_path), 2)
+    assert list(flux["electrons"]["HET"]["no_resample"].columns) == [("sun", "1 MeV"), ("sun", "5.9930 - 18.8300 MeV")]
+    assert flux["protons"] == {} and skipped == {}
+
+
 def test_download_without_the_cache_writes_nothing(events, tmp_path, monkeypatch):
     monkeypatch.setattr(data, "epd_load", FakeEPD())
     download(events, tmp_path / "cache")
