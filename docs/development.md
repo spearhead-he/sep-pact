@@ -20,8 +20,9 @@ The tests are in `tests/`, one file per part of the tool:
 | File | Tests |
 |---|---|
 | `test_parameters.py` | Parameters: defaults, the checks of each value and their messages, unknown names, the checks between parameters, the reference channel |
-| `test_shocks.py` | The shocks: the SODA and IRFU lists and their downloads, the formats of the shock list files, their combination and the events outside the lists |
-| `test_inputs.py` | The shocks of the parameters and their warnings, and the event list: its layouts and examples, the rows of particles and sensors and the times given more than once, the default windows, the order of the times, the data period, the date ranges, invalid files and former Onset Time lists |
+| `test_csv_files.py` | The CSV input files: the detection of their column separator, and the error for a time in another format |
+| `test_shocks.py` | The shocks: the SODA and IRFU lists and their downloads, the formats of the shock list files and the separators of the CSV ones, their combination and the events outside the lists |
+| `test_inputs.py` | The shocks of the parameters and their warnings, and the event list: its layouts and examples, its separators and times in another format, the rows of particles and sensors and the times given more than once, the default windows, the order of the times, the data period, the date ranges, invalid files and former Onset Time lists |
 | `test_background.py` | The background windows per event, particle and sensor (`background.py`): the rows of particles and sensors in the event list, the last of the times given more than once and its message, the fallback to the window of the particle and of the event, setting and resetting the windows, the default window, the names of the particles and sensors, and the event list with the windows |
 | `test_event_times.py` | The event times: where the background window and end time come from, setting and resetting them, invalid times, the points of the window and their warnings, the effect on the onsets, and `save_events()` |
 | `test_data.py` | The channel layout, the grouping of the channels, the download with its retries, the events left out, the cache (its entries per event, saved every 10 events and when the loading stops), the resampling |

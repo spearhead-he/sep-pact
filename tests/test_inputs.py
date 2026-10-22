@@ -207,6 +207,39 @@ def test_read_events_times_in_nanoseconds(tmp_path):
         assert events[column].dtype == "datetime64[ns]"
 
 
+@pytest.mark.parametrize("separator, message", [
+    (",", ""),
+    (";", "The event list {path} is read with ';' as the column separator."),
+    ("\t", "The event list {path} is read with tab as the column separator."),
+])
+def test_read_events_with_each_separator(tmp_path, capsys, separator, message):
+    path = tmp_path / "events.csv"
+    path.write_text(f"Event No{separator}Start Time{separator}End Time{separator}Particle\n"
+                    f"1{separator}2021-01-01 12:00{separator}2021-01-02 12:00{separator}\n")
+    events = read_events(str(path), make_params(tmp_path))
+    assert events.loc[1, "Start Time"] == pd.Timestamp(T0)
+    assert events.loc[1, "End Time"] == pd.Timestamp(T0 + timedelta(days=1))
+    assert capsys.readouterr().out.strip() == message.format(path=path)
+
+
+def test_read_events_saved_with_a_byte_order_mark(tmp_path):
+    # as by Excel's "CSV UTF-8"
+    path = tmp_path / "events.csv"
+    path.write_bytes("\ufeffEvent No;Reference Time\n1;2021-01-01 12:00\n".encode())
+    assert read_events(str(path), make_params(tmp_path)).loc[1, "Reference Time"] == pd.Timestamp(T0)
+
+
+def test_read_events_with_a_time_in_another_format(tmp_path):
+    path = tmp_path / "events.csv"
+    path.write_text("Event No,Start Time,End Time\n"
+                    "1,2021-01-01 12:00,2021-01-02 12:00\n"
+                    "2,2021-01-03 12:00,04/01/2021 12:00\n")
+    with pytest.raises(ValueError) as error:
+        read_events(str(path), make_params(tmp_path))
+    assert str(error.value).startswith(f"Line 3 of the event list {path}, End Time: '04/01/2021 12:00' is not a time "
+                                       "as YYYY-MM-DD HH:MM or YYYY-MM-DD HH:MM:SS (UTC).")
+
+
 @pytest.mark.parametrize("name", ["events.xlsx", "events.txt"])
 def test_read_events_accepts_only_csv(tmp_path, name):
     path = tmp_path / name

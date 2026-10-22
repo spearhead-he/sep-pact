@@ -65,6 +65,21 @@ def test_example_shock_files(name):
     assert read.iloc[-1].floor("min") == pd.Timestamp("2021-11-03 14:04")
 
 
+@pytest.mark.parametrize("separator", [",", ";", "\t"])
+def test_read_shock_file_csv_with_each_separator(tmp_path, separator):
+    path = tmp_path / "shocks.csv"
+    path.write_text(f"# shocks\nShock Time{separator}Note\n2021-11-02 12:00{separator}a\n2021-11-01 10:00{separator}\n")
+    assert list(read_shock_file(str(path))) == times("2021-11-01 10:00", "2021-11-02 12:00")
+
+
+def test_read_shock_file_csv_with_a_time_in_another_format(tmp_path):
+    path = tmp_path / "shocks.csv"
+    path.write_text("Shock Time\n2021-11-01 10:00\n02/11/2021 12:00\n")
+    with pytest.raises(ValueError, match=f"The shock list {path}, Shock Time: '02/11/2021 12:00' is not a time as "
+                                         "YYYY-MM-DD HH:MM"):
+        read_shock_file(str(path))
+
+
 def test_read_shock_file_not_found():
     with pytest.raises(ValueError, match="The shock list missing.dat is not found"):
         read_shock_file("missing.dat")

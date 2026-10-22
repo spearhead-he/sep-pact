@@ -1,6 +1,6 @@
 """Shocks: the shock lists online (SODA, IRFU), the shock list files and the custom shock times
 
-This module uses only pandas and the standard library, so that the SPEARHEAD tools can share it.
+This module uses only pandas, the standard library and csv_files, so that the SPEARHEAD tools can share it.
 """
 import json
 import os
@@ -8,6 +8,8 @@ import re
 import urllib.request
 
 import pandas as pd
+
+from .csv_files import csv_separator, parse_times
 
 # the shock lists online, with the Solar Orbiter shocks: {name: description}
 SHOCK_SOURCES = {
@@ -79,8 +81,8 @@ def read_shock_file(path: str) -> pd.Series:
         text = file.read()
     lines = [line for line in text.splitlines() if line.strip() and not line.startswith("#")]
     if lines and "Shock Time" in lines[0]:
-        column = pd.read_csv(path, comment="#", skipinitialspace=True)["Shock Time"].dropna()
-        return _times(pd.to_datetime(column, format="ISO8601"))
+        column = pd.read_csv(path, sep=csv_separator(path), comment="#", skipinitialspace=True)["Shock Time"].dropna()
+        return _times(parse_times(column, lambda _: f"The shock list {path}, Shock Time"))
     for parse in (parse_ipshocks, parse_irfu):
         if len(times := parse(text)):
             return times
