@@ -178,9 +178,11 @@ def test_save_corrections(tool, tmp_path):
     saved = pd.read_csv(path)
     assert saved.columns.tolist() == CORRECTION_COLUMNS
     onset = tool.df_results.loc[REFERENCE, "Onset Time"]
-    assert saved.iloc[0].tolist() == [1, "electrons", "HET", "1 MeV", 2.0, "asun", f"{onset:%Y-%m-%d %H:%M:%S}"]
+    assert saved.iloc[0].tolist() == [1, "electrons", "HET", "1 MeV", 2, "asun", f"{onset:%Y-%m-%d %H:%M:%S}"]
     assert saved.iloc[1, :4].tolist() == [1, "protons", "HET", "8 MeV"] and saved.iloc[1, 4:].isna().all()
     assert read_corrections(path) == ({REFERENCE: (TWO_MIN, "asun"), PROTONS_8: None}, {REFERENCE: onset})
+    # the resolution in whole minutes, also with a row without an onset
+    assert open(path).read().splitlines()[1].split(",")[4] == "2"
 
 
 def test_file_corrections(tool, tmp_path, monkeypatch, capsys):

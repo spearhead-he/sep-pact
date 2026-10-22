@@ -2,6 +2,7 @@
 import os
 from datetime import timedelta
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -82,6 +83,22 @@ def test_save_results(tool):
     assert row["High Energy"] == pytest.approx(2.2)
 
 
+def test_save_results_numbers(tool):
+    tool.df_results["Peak Flux"] = np.float32(72.64031)
+    tool.df_results["Fluence"] = 312964.0
+    tool.df_results.loc[tool.df_results.index[0], ["Onset Time", "Onset Resolution", "Onset Viewing"]] = None
+    tool.save_results()
+    with open(os.path.join(tool.params.dir_outputs, "results.csv")) as file:
+        header, first, second = (line.rstrip("\n").split(",") for line in list(file)[:3])
+    first, second = dict(zip(header, first)), dict(zip(header, second))
+    # 7 significant digits, the precision of the float32 flux, instead of 72.64031219482422
+    assert first["Peak Flux"] == "72.64031" and first["Fluence"] == "312964"
+    # resolutions in whole minutes, empty without an onset
+    assert first["Onset Resolution"] == "" and second["Onset Resolution"] == "2"
+    assert second["Fluence Resolution"] == "30"
+    assert (first["Low Energy"], first["High Energy"]) == ("1", "2.2")
+
+
 def test_plot_events(tool):
     tool.plot_events()
     assert os.listdir(tool.params.dir_plots) == ["event_001.png"]
@@ -125,8 +142,11 @@ def test_results_table_without_any_onset(tmp_path, monkeypatch):
         step()
     table = tool.results_table()
     assert table["Onset Time"].isna().all()
+    # the flags of a channel group without an onset are False, not empty
+    for column in ("Onset Copied", "Onset at BG End", "Onset Corrected"):
+        assert table[column].eq(False).all()
     for column in ("Onset Resolution", "Peak Flux Resolution", "Fluence Resolution"):
-        assert table[column].isna().all() and table[column].dtype == "float64"
+        assert table[column].isna().all() and table[column].dtype == "Int64"
 
 
 def test_run_data_fails_if_no_event_has_data(tmp_path, monkeypatch):

@@ -171,7 +171,7 @@ chosen = tool.df_results.loc[(20, "protons", "HET", "8 MeV"), "Onset Time"]
 
 The choices are made by `choose_onset()`, `choose_peak()` and `choose_fluence()` (`spearhead.sep_pact.analysis`), from the rows of `df_series` of a channel group. Of equal values, the first viewing (in the order of `viewings`) or the first resolution is chosen.
 
-`tool.results_table()` returns `df_results` as the table of `results.csv`: one row per event and channel group, with the energy range of the group and the resolutions in minutes. `tool.group_energies(particle, sensor, group)` returns the low and high energy of a channel group, in MeV.
+`tool.results_table()` returns `df_results` as the table of `results.csv`: one row per event and channel group, with the energy range of the group and the resolutions in whole minutes (`Int64`, empty without a result). `tool.group_energies(particle, sensor, group)` returns the low and high energy of a channel group, in MeV.
 
 ```python
 results = tool.results_table()

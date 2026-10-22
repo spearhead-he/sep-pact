@@ -342,31 +342,31 @@ The chosen results, one row per event and channel group, in the order of the eve
 
 ```
 Event No,Particle,Sensor,Energy Label,Low Energy,High Energy,Onset Time,Onset Resolution,Onset Viewing,...
-20,electrons,HET,1 MeV,0.4533,2.401,2021-11-01 01:50:00,2.0,north,...
+20,electrons,HET,1 MeV,0.4533,2.401,2021-11-01 01:50:00,2,north,...
 ```
 
-| Column | Description |
-|---|---|
-| `Event No` | Event number of the event list |
-| `Particle`, `Sensor` | Particle (`electrons` or `protons`) and sensor of the channel group |
-| `Energy Label` | Name of the channel group in `group_options` |
-| `Low Energy`, `High Energy` | Energy range of the channel group: the low energy of its first channel and the high energy of its last channel |
-| `Onset Time` | Chosen onset |
-| `Onset Resolution`, `Onset Viewing` | Resolution and viewing of the onset |
-| `Onset Copied` | `True` if the onset is the one of the reference channel (see [Onset](#onset-step)) |
-| `Onset at BG End` | `True` if the onset is at the end of the background window: the rise may have started earlier |
-| `Onset Corrected` | `True` if the onset was set by hand (see [Onset corrections](#onset-corrections)) |
-| `BG Start`, `BG End` | Background window of the channel group: the window of its particle and sensor, of its particle, or of the event |
-| `BG Window Source`, `End Time Source` | Where the background window of the channel group and the end time of the event come from: `event list`, `default`, or `set` in the [Event times](#event-times-step) step |
-| `Peak Flux` | Chosen peak flux |
-| `Peak Flux Time` | Time of the peak flux |
-| `Peak Flux Resolution`, `Peak Flux Viewing` | Resolution and viewing of the peak flux |
-| `Fluence` | Chosen fluence |
-| `Fluence Start`, `Fluence End` | Interval of the fluence |
-| `Fluence Threshold` | Flux threshold that bounds the interval |
-| `Fluence Resolution`, `Fluence Viewing` | Resolution and viewing of the fluence |
+| Column | Unit | Description |
+|---|---|---|
+| `Event No` | | Event number of the event list |
+| `Particle`, `Sensor` | | Particle (`electrons` or `protons`) and sensor of the channel group |
+| `Energy Label` | | Name of the channel group in `group_options` |
+| `Low Energy`, `High Energy` | MeV | Energy range of the channel group: the low energy of its first channel and the high energy of its last channel |
+| `Onset Time` | UTC | Chosen onset |
+| `Onset Resolution`, `Onset Viewing` | minutes | Resolution and viewing of the onset |
+| `Onset Copied` | | `True` if the onset is the one of the reference channel (see [Onset](#onset-step)) |
+| `Onset at BG End` | | `True` if the onset is at the end of the background window: the rise may have started earlier |
+| `Onset Corrected` | | `True` if the onset was set by hand (see [Onset corrections](#onset-corrections)) |
+| `BG Start`, `BG End` | UTC | Background window of the channel group: the window of its particle and sensor, of its particle, or of the event |
+| `BG Window Source`, `End Time Source` | | Where the background window of the channel group and the end time of the event come from: `event list`, `default`, or `set` in the [Event times](#event-times-step) step |
+| `Peak Flux` | particles / (cm² s sr MeV) | Chosen peak flux |
+| `Peak Flux Time` | UTC | Time of the peak flux |
+| `Peak Flux Resolution`, `Peak Flux Viewing` | minutes | Resolution and viewing of the peak flux |
+| `Fluence` | particles / (cm² sr MeV) | Chosen fluence |
+| `Fluence Start`, `Fluence End` | UTC | Interval of the fluence |
+| `Fluence Threshold` | particles / (cm² s sr MeV) | Flux threshold that bounds the interval |
+| `Fluence Resolution`, `Fluence Viewing` | minutes | Resolution and viewing of the fluence |
 
-Empty cells mean that the channel group has no onset, peak flux or fluence for that event.
+Empty cells mean that the channel group has no onset, peak flux or fluence for that event; its `Onset Copied`, `Onset at BG End` and `Onset Corrected` are `False`. The resolutions are whole minutes, and the peak flux, fluence and threshold have 7 significant digits, the precision of the EPD flux (32-bit floats). `tool.df_results` keeps the values at full precision and the resolutions as timedeltas.
 
 The same results are `tool.df_results`, and the results of every resolution and viewing are `tool.df_series` (see the [library guide](library.md#results)). The file can be read with one row per event with pandas:
 
