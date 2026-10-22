@@ -1,7 +1,7 @@
 """Notebook interface: the widgets of the parameters form, the channel group editor and the steps of the analysis"""
 import os
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pandas as pd
 import pytest
@@ -111,7 +111,81 @@ def test_resolutions_and_spike_thresholds(tmp_path, monkeypatch):
     assert "resample_freqs" in tool.errors
 
 
-def test_event_list_and_shock_list_info(tmp_path, monkeypatch):
+def test_shocks_of_each_source(tmp_path, monkeypatch):
+    tool = make_tool(tmp_path, monkeypatch)
+    w = tool.widgets
+    # the shock list file of make_tool, without a shock list online
+    assert w["shock_source"].value is None and w["shock_source_info"].value == "No shock list online."
+    assert w["file_shocks_info"].value == "1 shock in the file, from 2021-01-31 to 2021-01-31."
+    w["shock_source"].value = "SODA"
+    assert tool.parameters.shock_source == "SODA"
+    assert w["shock_source_info"].value == "18 shocks in SODA (Solar Orbiter), from 2021-05-04 to 2021-12-27."
+    w["shock_source"].value = "IRFU"
+    assert w["shock_source_info"].value == "103 shocks in IRFU (Solar Orbiter), from 2020-04-19 to 2024-03-01."
+    w["file_shocks"].value = ""
+    assert w["file_shocks_info"].value == "No shock list file."
+    w["file_shocks"].value = "missing.dat"
+    assert "The shock list missing.dat is not found" in w["file_shocks_info"].value
+
+
+def test_shocks_online_without_a_connection(tmp_path, monkeypatch):
+    import spearhead.sep_pact.shocks as module
+
+    def no_connection(url):
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(module, "_get", no_connection)
+    tool = make_tool(tmp_path, monkeypatch, shock_source="SODA")
+    assert "could not be downloaded (connection refused)" in tool.widgets["shock_source_info"].value
+
+
+def test_custom_shocks_and_the_shocks_during_the_events(tmp_path, monkeypatch):
+    tool = make_tool(tmp_path, monkeypatch, file_shocks="")
+    w = tool.widgets
+    assert w["shock_list"].options == ()
+    assert "There are no shocks" in w["shock_list_info"].value
+    w["add_shock"].click()
+    w["add_shock"].click()
+    assert tool.parameters.shock_times == [datetime(2021, 11, 2, 12)] * 2
+    # the custom shocks during the event (2021-01-01 10:00 to 2021-01-03 12:00)
+    w["shock_times"].children[0].children[0].value = datetime(2021, 1, 2)
+    assert [label for label, _ in w["shock_list"].options] == ["2021-01-02 00:00:00 (custom)"]
+    assert "only custom shocks" in w["shock_list_info"].value
+    w["shock_times"].children[1].children[1].click()
+    assert tool.parameters.shock_times == [datetime(2021, 1, 2)]
+
+
+def test_remove_and_restore_shocks(tmp_path, monkeypatch):
+    events = {1: {"Start Time": datetime(2021, 5, 4), "End Time": datetime(2021, 5, 25)}}
+    tool = make_tool(tmp_path, monkeypatch, events=events, shock_source="SODA", file_shocks="")
+    w = tool.widgets
+    # the SODA shocks during the event
+    assert [label for label, _ in w["shock_list"].options] == ["2021-05-04 16:26:57 (SODA)", "2021-05-18 19:01:30 (SODA)"]
+    assert w["shock_list_info"].value.startswith("2 shocks during the events.")
+    w["shock_list"].value = (w["shock_list"].options[0][1],)
+    w["remove_shocks"].click()
+    assert tool.parameters.removed_shocks == [datetime(2021, 5, 4, 16, 26, 57)]
+    assert [label for label, _ in w["shock_list"].options] == ["2021-05-18 19:01:30 (SODA)"]
+    assert "1 shock during the events; 1 shock removed." in w["shock_list_info"].value
+    w["restore_shocks"].click()
+    assert tool.parameters.removed_shocks == [] and len(w["shock_list"].options) == 2
+
+
+def test_shocks_outside_the_shock_lists(tmp_path, monkeypatch):
+    tool = make_tool(tmp_path, monkeypatch, shock_source="SODA", file_shocks="")
+    # the event of make_tool, in January 2021, before the SODA shocks of the test copy (from 2021-05-04)
+    assert "1 event (1) is not within the shock lists (2021-05-04 to 2021-12-27)" in tool.widgets["shock_list_info"].value
+    tool.widgets["file_events"].value = "missing.csv"
+    assert "(the events cannot be read)" in tool.widgets["shock_list_info"].value
+
+
+def test_run_data_with_the_shocks(tmp_path, monkeypatch, shown):
+    tool = make_tool(tmp_path, monkeypatch, shock_source="SODA", shock_times=[datetime(2021, 1, 2)])
+    tool.run_data()
+    assert tool.seppact.shocks["Source"].value_counts().to_dict() == {"SODA": 18, "shocks.dat": 1, "custom": 1}
+
+
+def test_event_list_info(tmp_path, monkeypatch):
     tool = make_tool(tmp_path, monkeypatch, events={1: {"Reference Time": T0}, 2: {"Reference Time": T0 + timedelta(days=3)}})
     assert tool._events_info(tool.parameters.file_events) == \
         "2 events (reference times), from 2021-01-01 10:00 to 2021-01-06 12:00"
@@ -121,11 +195,6 @@ def test_event_list_and_shock_list_info(tmp_path, monkeypatch):
     assert "Accepted columns" in tool._events_info(str(path))
     assert tool._events_info("") == "No event list: the 0 date ranges below are used."
     assert "color: red" in tool._events_info(str(tmp_path / "events.xlsx"))
-    assert tool._shocks_info(tool.parameters.file_shocks) == "1 shock"
-    assert "File not found: missing.dat" in tool._shocks_info("missing.dat")
-    path = tmp_path / "shocks.txt"
-    path.write_text("2021;6;13\n")
-    assert "color: red" in tool._shocks_info(str(path))
     tool.widgets["file_events"].value = str(path)
     assert tool.parameters.file_events == str(path)
 

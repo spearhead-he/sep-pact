@@ -1,23 +1,56 @@
-"""Reading of the input files: the shock list and the event list"""
-from datetime import datetime, timedelta
+"""Reading of the inputs: the shocks, the event list and the file of onset corrections"""
+import os
+from datetime import timedelta
 
 import pandas as pd
 
 from .background import KEY_COLUMNS, WINDOW_INDEX, BackgroundWindows, order_error, split_event_rows
 from .conf import SEPPACT_parameters
+from .shocks import combine_shocks, download_shocks, events_outside, read_shock_file
 
 
-def read_shocks(path: str) -> pd.Series:
-    """Returns the times of the shocks of an ipshocks.helsinki.fi list (lines starting with # are comments)"""
-    shocktimes = pd.read_csv(path,
-                             sep=";",
-                             header=None,
-                             comment="#",
-                             usecols=[0, 1, 2, 3, 4, 5])
-    shocktimes["Datetime"] = [datetime(row[0], row[1], row[2], row[3], row[4], row[5]) for _, row in shocktimes.iterrows()]
-    for i in range(6):
-        del shocktimes[i]
-    return pd.Series(shocktimes["Datetime"])
+def load_shocks(params: SEPPACT_parameters) -> tuple[pd.DataFrame, list[str]]:
+    """Returns the shocks (Shock Time, Source) of the shock list online (shock_source), of the shock list file
+    (file_shocks) and the custom ones (shock_times, Source "custom"), without removed_shocks, sorted by time, and the
+    warnings: a shock list online that could not be downloaded is left out"""
+    sources, warnings = {}, []
+    if params.shock_source:
+        try:
+            sources[params.shock_source] = download_shocks(params.shock_source)
+        except (OSError, ValueError) as error:
+            warnings.append(f"The shock list {params.shock_source} could not be downloaded ({error}); it is left out. "
+                            "The data server may be unavailable; try again later.")
+    if params.file_shocks:
+        sources[os.path.basename(params.file_shocks)] = read_shock_file(params.file_shocks)
+    if params.shock_times:
+        sources["custom"] = pd.Series(pd.to_datetime(params.shock_times), dtype="datetime64[ns]")
+    return combine_shocks(sources, params.removed_shocks), warnings
+
+
+def shock_warnings(shocks: pd.DataFrame, events: pd.DataFrame) -> list[str]:
+    """Returns the warnings about the shocks of the events: no shocks at all, or events outside the shock lists (the
+    first to the last shock of the shock list online and the shock list file)"""
+    if shocks.empty:
+        return ["There are no shocks: the analysis of each channel group goes on to the end time of its event."]
+    listed = shocks.loc[shocks["Source"] != "custom", "Shock Time"]
+    if listed.empty:
+        return ["There are only custom shocks: the other shocks during the events are not taken into account."]
+    if outside := events_outside(events, listed):
+        return [f"{count(len(outside), 'event')} ({_numbers(outside)}) {'is' if len(outside) == 1 else 'are'} not "
+                f"within the shock lists ({listed.min():%Y-%m-%d} to {listed.max():%Y-%m-%d}): the shocks during "
+                f"{'it' if len(outside) == 1 else 'them'} may be missing."]
+    return []
+
+
+def count(n: int, noun: str) -> str:
+    """Returns the number with the noun, e.g. 1 event, 3 events"""
+    return f"{n} {noun}{'' if n == 1 else 's'}"
+
+
+def _numbers(numbers: list, first: int = 10) -> str:
+    """Returns the numbers, the first ones only if there are more"""
+    text = ", ".join(map(str, numbers[:first]))
+    return text + (f" and {len(numbers) - first} more" if len(numbers) > first else "")
 
 
 # the columns of the event list after Event No, in each of its layouts (as in the VDA tool)

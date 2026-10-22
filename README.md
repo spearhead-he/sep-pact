@@ -23,7 +23,7 @@ SEP-PACT (Solar Energetic Particle Analysis and Calculation Tool) analyses Solar
 
 Each quantity is calculated at several time resolutions and in the four viewing directions of HET (sun, asun, north, south), and the tool chooses one result per channel group: the onset of the finest resolution with reliable data (the earliest of its viewings), the highest peak flux of the viewings at that resolution, and the largest fluence of the resolutions in the viewing of the peak.
 
-- **Inputs:** an event list (CSV file with the reference time of each event, or its data range and, optionally, its background window and the background windows of its particles and sensors), or date ranges set in the notebook, and the list of interplanetary shocks from the [ipshocks database](https://ipshocks.helsinki.fi/), provided in `inputs/shocks.dat`.
+- **Inputs:** an event list (CSV file with the reference time of each event, or its data range and, optionally, its background window and the background windows of its particles and sensors), or date ranges set in the notebook, and the interplanetary shocks, by default the [SODA](https://parker.gsfc.nasa.gov/shocks.html) shock list of Solar Orbiter, downloaded when the tool runs, with optionally a shock list file and shocks of your own.
 - **Outputs:** one plot per event in `plots/`, and the results in `outputs/results.csv`: the chosen onset, peak flux and fluence of each event and channel group. Optionally, the event list with the times set in the notebook and the onset corrections, to use them again.
 - **Notebook:** `sep-pact.ipynb`, the whole analysis: a form with all the parameters, then one cell per step, with the background window and end time of each event set over its data, and an event viewer to check the plot and results of each event and correct its onsets.
 - **Package:** `spearhead.sep_pact`, the code of the analysis, also usable in scripts without the notebook.
@@ -75,7 +75,7 @@ The plot of the example event (2021-11-01) has one panel per channel group: 1 Me
 - the onset time (green line), calculated with the n-sigma method;
 - the peak flux (red point);
 - the fluence interval (brown), calculated following [Jiggens et al. (2018)](https://doi.org/10.1051/swsc/2018010);
-- the interplanetary shocks of the [ipshocks database](https://ipshocks.helsinki.fi/) (pink).
+- the interplanetary shocks of the [SODA](https://parker.gsfc.nasa.gov/shocks.html) shock list (pink).
 
 A red title marks a channel group without an onset, and an orange title one with its onset at the end of the background window. The [user guide](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#plots) explains every element of the plot.
 

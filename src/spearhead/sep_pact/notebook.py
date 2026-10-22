@@ -5,9 +5,10 @@ and the plots in views.py.
 """
 import html
 import os
+from contextlib import redirect_stdout
 from copy import deepcopy
 from datetime import datetime, timedelta
-from io import BytesIO
+from io import BytesIO, StringIO
 
 import pandas as pd
 from IPython.display import display
@@ -17,13 +18,17 @@ from matplotlib import pyplot as plt
 from .analysis import SEPPACT
 from .conf import SEPPACT_parameters
 from .data import load_energies
-from .inputs import EVENT_LIST_LAYOUTS, event_list_layout, make_events, read_corrections, read_events, read_shocks
+from .inputs import (EVENT_LIST_LAYOUTS, count, event_list_layout, make_events, read_corrections, read_events,
+                     shock_warnings)
+from .shocks import SHOCK_FILE_FORMATS, SHOCK_SOURCES, combine_shocks, download_shocks, read_shock_file
 from .views import PLOT_WIDTH, plot_background, plot_event, plot_height
 
 # the resolutions that can be chosen, in minutes
 RESOLUTION_CHOICES = (1, 2, 5, 10, 15, 30, 60)
 # the first date range added in the form: the data of the example event
 EXAMPLE_DATE_RANGE = (datetime(2021, 10, 31, 19), datetime(2021, 11, 3, 2, 5))
+# the first custom shock added in the form, during the example event
+EXAMPLE_SHOCK_TIME = datetime(2021, 11, 2, 12)
 # spike threshold of a resolution without one in the parameters
 DEFAULT_SPIKE_THRESHOLD = 2.0
 # number of channels listed at once in the channel selection of a group
@@ -53,11 +58,6 @@ def _is_connection_error(error) -> bool:
 
 def _error_text(text: str) -> str:
     return f'<span style="color: red"><b>Error:</b> {html.escape(text)}</span>'
-
-
-def _count(n: int, noun: str) -> str:
-    """Returns the number with the noun, e.g. 1 event, 3 events"""
-    return f"{n} {noun}{'' if n == 1 else 's'}"
 
 
 def _note(text: str) -> widgets.HTML:
@@ -108,6 +108,8 @@ class SEPPACT_notebook:
         self._energies = None
         # the note on the plot height, which depends on the panel height and the number of channel groups
         self._wgt_height_note = None
+        # the shocks of the shock lists online, downloaded once: {source: times}
+        self._online_shocks = {}
         self._style = {"description_width": "initial"}
 
     # the results of the analysis, for further work in the notebook
@@ -199,13 +201,15 @@ class SEPPACT_notebook:
 
         self.widgets["file_events"].observe(gray_out_ranges, names="value")
         gray_out_ranges()
+        section_shocks = self._shocks_section()
+        self.widgets["file_events"].observe(lambda _: self._update_shocks(), names="value")
         layouts = "; ".join(", ".join(columns) for columns in EVENT_LIST_LAYOUTS.values())
         return widgets.VBox([
             _section("Event list", field_events,
                      _note(f"A CSV file with the column Event No, then one of: {layouts}; optionally Particle and Sensor, "
                            "for the background windows of particles and sensors. See the user guide.")),
             _section("Date ranges, used without an event list", wgt_ranges),
-            _section("Shock list", self._input_file("file_shocks", "Shock list:", self._shocks_info, "Path to the file")),
+            section_shocks,
             _section("Event windows",
                      self._duration("start_before_reference", "Data start before the Reference Time", "hours"),
                      self._duration("end_after_reference", "Data end after the Reference Time", "hours"),
@@ -228,7 +232,7 @@ class SEPPACT_notebook:
     def _events_info(self, path: str) -> str:
         if not path:
             n = len(self.parameters.date_ranges)
-            return html.escape(f"No event list: the {_count(n, 'date range')} below {'is' if n == 1 else 'are'} used.")
+            return html.escape(f"No event list: the {count(n, 'date range')} below {'is' if n == 1 else 'are'} used.")
         if not os.path.isfile(path):
             return _error_text(f"File not found: {path}")
         try:
@@ -237,7 +241,7 @@ class SEPPACT_notebook:
             events = read_events(path, self.parameters)
         except (ValueError, KeyError) as e:
             return _error_text(str(e))
-        return html.escape(f"{_count(len(events), 'event')} ({layout}), from {events['Start Time'].min():%Y-%m-%d %H:%M} "
+        return html.escape(f"{count(len(events), 'event')} ({layout}), from {events['Start Time'].min():%Y-%m-%d %H:%M} "
                            f"to {events['End Time'].max():%Y-%m-%d %H:%M}")
 
     def _date_ranges_widget(self) -> widgets.VBox:
@@ -248,9 +252,11 @@ class SEPPACT_notebook:
 
         def apply():
             self._set_parameter("date_ranges", [tuple(date_range) for date_range in ranges], wgt_error)
-            # the summary of the events, below the path of the event list
+            # the summary of the events, below the path of the event list, and the shocks during them
             if "file_events_info" in self.widgets:
                 self.widgets["file_events_info"].value = self._events_info(self.parameters.file_events)
+            if "shock_list" in self.widgets:
+                self._update_shocks()
 
         def set_time(i, j, value):
             ranges[i][j] = value
@@ -286,15 +292,144 @@ class SEPPACT_notebook:
         self.widgets["add_event"] = btn_add
         return widgets.VBox([wrapper_rows, btn_add, wgt_error])
 
+    # --- Shocks, in the Events tab ---
+    def _shocks_section(self) -> widgets.VBox:
+        """The shock list online, the shock list file and the custom shocks, with what each one has, and the list of
+        the shocks during the events, from which shocks can be removed"""
+        wgt_source = widgets.Dropdown(options=[(name, name) for name in SHOCK_SOURCES] + [("None", None)],
+                                      value=self.parameters.shock_source, layout=widgets.Layout(width=NUMBER_WIDTH))
+        field_source = self._field(wgt_source, "shock_source", description="Shock list online:")
+        field_file = self._text("file_shocks", "Shock list file:", "Path to a file - leave blank for none")
+        wgt_list = widgets.SelectMultiple(rows=8, layout=widgets.Layout(width=TEXT_WIDTH))
+        btn_remove = widgets.Button(description="Remove selected", tooltip="Leave the selected shocks out")
+        btn_restore = widgets.Button(description="Restore all", tooltip="Use all the shocks again")
+        wgt_error = widgets.HTML()
+
+        def remove(_):
+            removed = self.parameters.removed_shocks + [t.to_pydatetime() for t in wgt_list.value]
+            self._set_parameter("removed_shocks", removed, wgt_error)
+            self._update_shocks()
+
+        def restore(_):
+            self._set_parameter("removed_shocks", [], wgt_error)
+            self._update_shocks()
+
+        btn_remove.on_click(remove)
+        btn_restore.on_click(restore)
+        self.widgets.update({"shock_source_info": widgets.HTML(), "file_shocks_info": widgets.HTML(),
+                             "shock_list": wgt_list, "remove_shocks": btn_remove, "restore_shocks": btn_restore,
+                             "shock_list_info": widgets.HTML()})
+        wgt_times = self._shock_times_widget()
+        for parameter in ("shock_source", "file_shocks"):
+            self.widgets[parameter].observe(lambda _: self._update_shocks(), names="value")
+        self._update_shocks()
+        sources = "; ".join(SHOCK_SOURCES.values())
+        return _section("Shocks",
+                        _note("The analysis of a channel group ends at the first shock after its onset. The shocks are "
+                              "those of the shock list online, of the shock list file and the custom ones."),
+                        field_source, self.widgets["shock_source_info"], _note(f"Shock lists online: {sources}."),
+                        field_file, self.widgets["file_shocks_info"],
+                        _note(f"The file is {', or '.join(SHOCK_FILE_FORMATS)}; inputs/ has an example of each "
+                              "(shocks_ipshocks_example.dat, shocks_irfu_example.txt, shocks_example.csv)."),
+                        widgets.HTML("Custom shocks:"), wgt_times,
+                        widgets.HTML("Shocks during the events (select several with Ctrl+click):"), wgt_list,
+                        widgets.HBox([btn_remove, btn_restore]), wgt_error, self.widgets["shock_list_info"])
+
+    def _shock_times_widget(self) -> widgets.VBox:
+        """One row with each custom shock time, and a button to add shocks"""
+        wrapper_rows = widgets.VBox()
+        wgt_error = widgets.HTML()
+        times = list(self.parameters.shock_times)
+
+        def apply():
+            self._set_parameter("shock_times", [t for t in times if t is not None], wgt_error)
+            self._update_shocks()
+
+        def set_time(i, value):
+            times[i] = value
+            apply()
+
+        def remove(i):
+            del times[i]
+            show_rows()
+            apply()
+
+        def add(_):
+            times.append(times[-1] if times and times[-1] is not None else EXAMPLE_SHOCK_TIME)
+            show_rows()
+            apply()
+
+        def show_rows():
+            rows = []
+            for i, time in enumerate(times):
+                wgt_time = widgets.NaiveDatetimePicker(value=time, description=f"Shock {i + 1}:", style=self._style)
+                wgt_time.observe(lambda traitlet, i=i: set_time(i, traitlet["new"]), names="value")
+                btn_remove = widgets.Button(description="Remove shock", tooltip=f"Remove shock {i + 1}")
+                btn_remove.on_click(lambda _, i=i: remove(i))
+                rows.append(widgets.HBox([wgt_time, btn_remove]))
+            wrapper_rows.children = rows
+
+        btn_add = widgets.Button(description="Add shock")
+        btn_add.on_click(add)
+        show_rows()
+        self.widgets["shock_times"] = wrapper_rows
+        self.widgets["add_shock"] = btn_add
+        return widgets.VBox([wrapper_rows, btn_add, wgt_error])
+
     @staticmethod
-    def _shocks_info(path: str) -> str:
-        if not os.path.isfile(path):
-            return _error_text(f"File not found: {path}")
+    def _shocks_text(times: pd.Series, what: str) -> str:
+        return html.escape(f"{count(len(times), 'shock')} in {what}, from {times.min():%Y-%m-%d} to {times.max():%Y-%m-%d}.")
+
+    def _shock_sources(self) -> dict:
+        """Returns the times of the shocks of each source of the form, {source: times}, and shows what each one has,
+        or why it cannot be read"""
+        p, sources = self.parameters, {}
+        info_source, info_file = self.widgets["shock_source_info"], self.widgets["file_shocks_info"]
+        info_source.value = html.escape("No shock list online.")
+        if p.shock_source:
+            try:
+                if p.shock_source not in self._online_shocks:
+                    self._online_shocks[p.shock_source] = download_shocks(p.shock_source)
+                sources[p.shock_source] = self._online_shocks[p.shock_source]
+                info_source.value = self._shocks_text(sources[p.shock_source], f"{p.shock_source} (Solar Orbiter)")
+            except (OSError, ValueError) as e:
+                info_source.value = _error_text(f"The shock list {p.shock_source} could not be downloaded ({e}). "
+                                                "The data server may be unavailable; try again later.")
+        info_file.value = html.escape("No shock list file.")
+        if p.file_shocks:
+            try:
+                sources[os.path.basename(p.file_shocks)] = read_shock_file(p.file_shocks)
+                info_file.value = self._shocks_text(sources[os.path.basename(p.file_shocks)], "the file")
+            except (OSError, ValueError, KeyError) as e:
+                info_file.value = _error_text(str(e))
+        if p.shock_times:
+            sources["custom"] = pd.Series(pd.to_datetime(p.shock_times), dtype="datetime64[ns]")
+        return sources
+
+    def _update_shocks(self) -> None:
+        """Shows the shocks during the events (all of them without valid events), the number of removed shocks and the
+        warnings about the shocks"""
+        sources = self._shock_sources()
+        shocks = combine_shocks(sources, self.parameters.removed_shocks)
+        n_removed = len(combine_shocks(sources)) - len(shocks)
         try:
-            shocks = read_shocks(path)
-        except (ValueError, KeyError) as e:
-            return _error_text(str(e))
-        return html.escape(_count(len(shocks), "shock"))
+            # without the messages of the event list, which its summary shows
+            with redirect_stdout(StringIO()):
+                events = make_events(self.parameters)
+        except (ValueError, KeyError, OSError):
+            events = None
+        during = shocks
+        if events is not None:
+            in_events = shocks["Shock Time"].map(lambda t: ((events["Plot Start"] <= t) & (events["Plot End"] >= t)).any())
+            during = shocks[in_events.astype(bool)]
+        self.widgets["shock_list"].options = [(f"{t:%Y-%m-%d %H:%M:%S} ({source})", t)
+                                              for t, source in zip(during["Shock Time"], during["Source"])]
+        lines = [html.escape(f"{count(len(during), 'shock')} during the events" if events is not None
+                             else f"{count(len(during), 'shock')} (the events cannot be read)")
+                 + html.escape(f"; {count(n_removed, 'shock')} removed." if n_removed else ".")]
+        if events is not None:
+            lines += [f'<span style="color: darkorange">{html.escape(w)}</span>' for w in shock_warnings(shocks, events)]
+        self.widgets["shock_list_info"].value = "<br>".join(lines)
 
     @staticmethod
     def _corrections_info(path: str) -> str:
@@ -306,7 +441,7 @@ class SEPPACT_notebook:
             corrections, _ = read_corrections(path)
         except (ValueError, KeyError) as e:
             return _error_text(str(e))
-        return html.escape(f"{_count(len(corrections), 'correction')}, applied after the automatic choice.")
+        return html.escape(f"{count(len(corrections), 'correction')}, applied after the automatic choice.")
 
     # --- Data tab ---
     def _data_tab(self) -> widgets.VBox:
@@ -551,7 +686,7 @@ class SEPPACT_notebook:
         p = self.parameters
         low, high = SEPPACT_parameters.RECOMMENDED_PANEL_HEIGHTS
         n_groups = sum(len(groups) for groups in p.group_options.values())
-        note = (f"Recommended: {low} to {high} inches. With {_count(n_groups, 'channel group')}, the plots are "
+        note = (f"Recommended: {low} to {high} inches. With {count(n_groups, 'channel group')}, the plots are "
                 f"{PLOT_WIDTH} inches wide and {plot_height(p.panel_height, n_groups):g} inches high (the panels, and "
                 "the title, legend and axis labels).")
         if p.panel_height < low:
@@ -603,7 +738,7 @@ class SEPPACT_notebook:
         of events; the first event is chosen, also without a click"""
         events = self.seppact.events
         wgt_subset = widgets.Checkbox(value=False, indent=False, layout=widgets.Layout(width="max-content"),
-                                      description=f"Only the {_count(len(subset), 'event')} {subset_description}")
+                                      description=f"Only the {count(len(subset), 'event')} {subset_description}")
         wgt_event = widgets.Dropdown(description="Event:", style=self._style)
 
         def set_options(_=None):
@@ -782,7 +917,7 @@ class SEPPACT_notebook:
         copied = results["Onset Copied"].eq(True).sum()
         at_bg_end = results["Onset at BG End"].eq(True).sum()
         return (f"{results['Onset Time'].notna().sum()} of {len(results)} channel groups "
-                f"({_count(len(self.seppact.events), 'event')}) have an onset: {copied} copied from the reference "
+                f"({count(len(self.seppact.events), 'event')}) have an onset: {copied} copied from the reference "
                 f"channel, and {at_bg_end} at the end of the background window.")
 
     def _flagged_events(self) -> list:
@@ -872,7 +1007,7 @@ class SEPPACT_notebook:
             except OSError as e:
                 wgt_saved.value = _error_text(str(e))
                 return
-            wgt_saved.value = html.escape(f"Saved {_count(len(self.seppact.corrections), 'correction')} to "
+            wgt_saved.value = html.escape(f"Saved {count(len(self.seppact.corrections), 'correction')} to "
                                           f"{wgt_path.value}; give it as the corrections file (Onsets tab) to apply "
                                           "them again.")
 
@@ -939,5 +1074,5 @@ class SEPPACT_notebook:
         saved = [f"the results to {os.path.join(p.dir_outputs, 'results.csv')}"]
         if self.save_plots:
             self.seppact.plot_events()
-            saved.append(f"the plots of {_count(len(self.seppact.events), 'event')} to {p.dir_plots}")
+            saved.append(f"the plots of {count(len(self.seppact.events), 'event')} to {p.dir_plots}")
         display(widgets.HTML(html.escape(f"Saved {' and '.join(saved)}.")))

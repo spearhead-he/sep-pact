@@ -10,7 +10,7 @@ from spearhead.sep_pact.conf import default_group_options
 def test_defaults():
     p = SEPPACT_parameters()
     assert p.file_events == "inputs/events_example.csv"
-    assert p.file_shocks == "inputs/shocks.dat"
+    assert p.shock_source == "SODA" and p.file_shocks == "" and p.shock_times == [] and p.removed_shocks == []
     assert p.viewings == ["sun", "asun", "north", "south"]
     assert p.resample_freqs == [timedelta(minutes=2), timedelta(minutes=5), timedelta(minutes=10), timedelta(minutes=30)]
     assert p.group_options == default_group_options()
@@ -122,6 +122,23 @@ def test_dir_inputs_is_removed():
     with pytest.raises(AttributeError, match="The dir_inputs parameter was removed in 0.2.0. Give the event list and the "
                                              "shock list as paths, in file_events and file_shocks."):
         p.dir_inputs = "inputs"
+
+
+@pytest.mark.parametrize("value", ["IRFU", None])
+def test_shock_source(value):
+    assert SEPPACT_parameters(shock_source=value).shock_source == value
+
+
+def test_unknown_shock_source():
+    with pytest.raises(ValueError, match="shock_source must be one of SODA, IRFU, or None, not 'ipshocks'"):
+        SEPPACT_parameters(shock_source="ipshocks")
+
+
+@pytest.mark.parametrize("name", ["shock_times", "removed_shocks"])
+def test_shock_times_are_datetimes(name):
+    assert getattr(SEPPACT_parameters(**{name: [datetime(2021, 11, 2)]}), name) == [datetime(2021, 11, 2)]
+    with pytest.raises(TypeError, match=f"{name} must be a list of datetime"):
+        SEPPACT_parameters(**{name: ["2021-11-02"]})
 
 
 @pytest.mark.parametrize("value", [0, 0.5, 11, -2, "3", True])

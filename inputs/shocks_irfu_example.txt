@@ -1,0 +1,14 @@
+# Solar Orbiter shock list created by Andrew P. Dimmock, Swedish Institute of Space Physics, Uppsala, Sweden
+# Database as of: 28 October 2024
+# Alfvén Mach number is in the shock rest frame based on the shock speed from mass flux conservation
+# Shock geometry (theta_bn) computed from the shock normal based on mixed mode coplanarity
+# When MA is nan but theta_bn is available, then magnetic coplanarity was used to compute the shock normal
+# All routines to compute these parameters are available in irfu-matlab: https://github.com/irfu/irfu-matlab
+# From .MAT file: solo_SDB_20241028_1009.mat
+#
+# Caveat: due to the semi-automated approach we recommend to check the shock events in case of misidentification and also the associated parameters.
+#
+# Num     Time of ramp (UTC)       |R| (AU)    MA     theta_bn (deg)
+019     2021-10-30T22:02:09          0.82      6.7      44
+020     2021-11-03T12:28:04          0.84      2.8      34
+021     2021-11-03T14:04:26          0.84      5.1      37

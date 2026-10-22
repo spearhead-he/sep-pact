@@ -9,7 +9,7 @@ import pandas as pd
 from .background import BGWindow, key_label, window_points
 from .conf import SEPPACT_parameters
 from .data import channel_layout, download_data, load_energies, resample_flux
-from .inputs import CORRECTION_COLUMNS, load_events, read_corrections, read_shocks
+from .inputs import CORRECTION_COLUMNS, load_events, load_shocks, read_corrections, shock_warnings
 
 
 # the index of df_series, one row per series, and of df_results, one row per channel group of an event
@@ -335,7 +335,7 @@ class SEPPACT:
     - events: the event list, one row per event, with the times filled in, the background window of the event, and
       where the window and the end time come from (BG Window Source, End Time Source)
     - bg_windows: the background windows of the events and of their particles and sensors (see bg_window())
-    - shocktimes: the times of the shocks
+    - shocks: the shocks (Shock Time, Source), and shocktimes their times
     - dfs_flux: the flux of the channel groups, per particle, sensor and resolution
     - df_series: the onset, data quality, peak flux and fluence of every series, one row per event, particle, sensor,
       group label, resolution and viewing
@@ -350,6 +350,7 @@ class SEPPACT:
         self.params.check()
         self.particles, self.sensors, self.channels, self.sensors_all = channel_layout(self.params.group_options)
         self.reference_channel = self.params.reference_channel
+        self.shocks = None
         self.shocktimes = None
         self.events = None
         self.bg_windows = None
@@ -453,10 +454,14 @@ class SEPPACT:
         return {key: list(spikes) for key, spikes in self.df_spikes.groupby(level=SERIES_INDEX, sort=False)["Spike Time"]}
 
     def run_inputs(self) -> None:
-        """Reads the shock list and the events (the event list, or the date ranges without one)"""
+        """Reads the events (the event list, or the date ranges without one) and the shocks; prints the warnings about
+        the shocks"""
         p = self.params
-        self.shocktimes = read_shocks(p.file_shocks)
         self.events, self.bg_windows = load_events(p)
+        self.shocks, warnings = load_shocks(p)
+        self.shocktimes = self.shocks["Shock Time"]
+        for warning in warnings + shock_warnings(self.shocks, self.events):
+            print(warning)
         self.corrections, self._correction_times = read_corrections(p.file_corrections) if p.file_corrections else ({}, {})
         self._input_end_times = self.events[["End Time", "End Time Source"]].copy()
 

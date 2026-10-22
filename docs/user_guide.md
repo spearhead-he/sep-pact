@@ -12,7 +12,7 @@
 - [Input files](#input-files)
   - [Event list](#event-list)
   - [Background windows of particles and sensors](#bg-windows-of-particles)
-  - [Shock list](#shock-list)
+  - [Shocks](#shocks)
 - [Steps of the notebook](#steps-of-the-notebook)
   - [Data](#data-step)
   - [Event times](#event-times-step)
@@ -44,7 +44,10 @@ All the parameters are in the form at the top of the notebook (`tool.parameters_
 |---|---|---|---|
 | Event list | `file_events` | `inputs/events_example.csv` | Path of the [event list](#event-list). Below the path, the number of events, the layout of the list and the range of the events, or why the file cannot be read. Leave it blank to use the date ranges |
 | Date ranges | `date_ranges` | none | The start and end of each event, used without an event list; "Add event" and "Remove event" add and remove events |
-| Shock list | `file_shocks` | `inputs/shocks.dat` | Path of the [shock list](#shock-list), with its number of shocks |
+| Shock list online | `shock_source` | SODA | The [shock list online](#shocks): SODA, IRFU or None; below it, its number of shocks and their range |
+| Shock list file | `file_shocks` | none | Path of a [shock list file](#shocks), with its number of shocks and their range. Leave it blank for none |
+| Custom shocks | `shock_times` | none | Shock times of your own; "Add shock" and "Remove shock" add and remove them |
+| Shocks during the events | `removed_shocks` | none | The shocks within the data of the events, with their source; "Remove selected" leaves the selected ones out, and "Restore all" uses all of them again. Below the list, the number of removed shocks and the [warnings](#shocks) |
 | Data start before the Reference Time (hours) | `start_before_reference` | 2 h | For event lists with a Reference Time: the Start Time of each event |
 | Data end after the Reference Time (hours) | `end_after_reference` | 48 h | For event lists with a Reference Time: the End Time of each event |
 | Default background start after the Start Time (minutes) | `bg_start_after_start` | 0 | Start of the background window of the events without one |
@@ -195,15 +198,45 @@ Event No,Particle,Sensor,Start Time,BG Start,BG End,End Time
 
 Event lists without the columns `Particle` and `Sensor` keep one window per event, as before.
 
-### Shock list
+### Shocks
 
-The shock list, by default `inputs/shocks.dat`, is the list of interplanetary shocks of the [ipshocks database](https://ipshocks.helsinki.fi/): lines starting with `#` are comments, and the first six columns (separated by `;`) are the year, month, day, hour, minute and second of the shock. The analysis of a channel group ends at the first shock after its onset, if that is before `End Time`.
+The analysis of a channel group ends at the first interplanetary shock after its onset, if that is before `End Time`: its data quality check, spikes, peak flux and fluence. The shocks are those of three sources, concatenated and sorted by time:
+
+- **Shock list online** (`shock_source`): downloaded each time it is selected and in the data step; it is not stored. The Solar Orbiter shocks of:
+  - [SODA](https://parker.gsfc.nasa.gov/shocks.html) (default): the ShOck Detection Algorithm list of the NASA Parker Solar Probe science site, from 2020-10-14 to 2025-02-28 at the time of writing (171 shocks);
+  - [IRFU](https://doi.org/10.5281/zenodo.11091062): the Solar Orbiter IRFU shock list by A. P. Dimmock, in its latest version on Zenodo, from 2020-04-19 to 2024-03-01 (103 shocks);
+  - None.
+
+  If the list cannot be downloaded, a warning is shown and the analysis goes on with the other sources.
+- **Shock list file** (`file_shocks`), in one of these formats:
+  - an [ipshocks](https://ipshocks.helsinki.fi/) list: lines starting with `#` are comments, and the first six columns, separated by `;`, are the year, month, day, hour, minute and second of the shock;
+  - the IRFU list (`.txt`), as downloaded from Zenodo;
+  - a CSV file with the column `Shock Time` (`YYYY-MM-DD HH:MM:SS`, UTC).
+
+  `inputs/` has an example of each format, with shocks around the example event: `shocks_ipshocks_example.dat`, `shocks_irfu_example.txt` and `shocks_example.csv`:
+
+  ```
+  # Shocks at Solar Orbiter around the example event (UTC); one time per row, in the column Shock Time
+  Shock Time
+  2021-10-30 22:02:09
+  2021-11-03 14:04:26
+  ```
+- **Custom shocks** (`shock_times`): shock times added in the form.
+
+A shock found by two sources is listed twice, which does not change the analysis. Shocks can be left out with "Remove selected" in the list of the shocks during the events (`removed_shocks`), e.g. a shock that is not one, or one of the same shock from two sources.
+
+The form and the data step warn:
+- when there are no shocks: the analysis then goes on to the end time of each event;
+- when there are only custom shocks;
+- about the events that are not within the shock lists (from the first to the last shock of the shock list online and the file): the shocks during them may be missing. With SODA, these are the events before 2020-10-14 or after 2025-02-28.
+
+The shock lists are automated or semi-automated and can miss or misidentify shocks; check the shocks in the plots of the events.
 
 ## Steps of the notebook
 
 1. **Setup:** imports the package and creates the interface, `tool = SEPPACT_notebook()`.
 2. **Parameters:** `tool.parameters_form()`; see [Parameters](#parameters).
-3. **Data:** `tool.run_data()` reads the event list and the shock list, fills in the missing windows, and downloads the data (see [Data](#data-step)). It shows the event list with its windows.
+3. **Data:** `tool.run_data()` reads the event list and the shocks, fills in the missing windows, and downloads the data (see [Data](#data-step)). It shows the event list with its windows.
 4. **Event times:** `tool.event_times()` shows the background windows and the end time of each event, which can be changed, also for a particle and sensor (see [Event times](#event-times-step)).
 5. **Analysis:** `tool.run_analysis()` runs the onset, spikes, peak flux and fluence steps (see [Analysis](#analysis-step)).
 6. **Events:** `tool.event_viewer()` shows the plot and the results of each event, and the onset of each channel group can be corrected (see [Events](#events-step) and [Onset corrections](#onset-corrections)).
