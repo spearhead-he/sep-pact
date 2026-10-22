@@ -827,8 +827,11 @@ class SEPPACT:
                 onset = self._onset(n, particle, sensor, mevlbl)
                 enddate = self._analysis_end(n, onset)
                 ts = remove_spikes(self._flux(*key)[onset:enddate], spikes.get(key, []), resample_freq)
-                values = fluence_interval(ts, onset, self._chosen(n, particle, sensor, mevlbl, "Peak Flux Time"),
-                                          enddate, p.fluence_peak_fraction, p.fluence_points)
+                # a series without points from the onset to the end, e.g. at a coarse resolution with a shock soon
+                # after the onset, has no fluence
+                if not ts.empty:
+                    values = fluence_interval(ts, onset, self._chosen(n, particle, sensor, mevlbl, "Peak Flux Time"),
+                                              enddate, p.fluence_peak_fraction, p.fluence_points)
             for column, value in zip(FLUENCE_COLUMNS, values):
                 fluences[column].append(value)
         for column in ("Fluence", "Fluence Threshold"):

@@ -16,6 +16,10 @@ All notable changes of SEP-PACT. The format is based on [Keep a Changelog](https
 - `BG Window Source` in `results.csv` is the source of the window of the channel group.
 - The background warnings of the event times step name the window they are about.
 
+### Fixed
+
+- The fluence calculation failed for a series without data points from the onset to the first shock after it, e.g. at a coarse resolution with a shock a few minutes after the onset; such a series has no fluence.
+
 ## [0.3.0] - 2026-10-21
 
 ### Added
