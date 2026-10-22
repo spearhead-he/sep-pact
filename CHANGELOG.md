@@ -20,6 +20,7 @@ All notable changes of SEP-PACT. The format is based on [Keep a Changelog](https
 
 ### Fixed
 
+- The results table failed when no channel group of any event had an onset.
 - With pandas 3.1, the resampled flux was float64 instead of the float32 of the EPD data, and the peak flux and fluence differed from those with pandas 3.0 from about the 8th significant digit; the resampled flux keeps the type of the data.
 - The fluence calculation failed for a series without data points from the onset to the first shock after it, e.g. at a coarse resolution with a shock a few minutes after the onset; such a series has no fluence.
 

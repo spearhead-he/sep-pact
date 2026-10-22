@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from spearhead.sep_pact.analysis import RESULT_COLUMNS, SERIES_INDEX
-from tests.helpers import T0, synthetic_tool
+from tests.helpers import T0, FakeEPD, synthetic_tool
 
 
 @pytest.fixture
@@ -103,3 +103,14 @@ def test_results_table_has_the_same_type_for_one_or_more_events(tmp_path, monkey
     assert tool.dfs_flux["electrons"]["HET"][timedelta(minutes=2)].dtypes.iloc[0] == "float32"
     for column in ("Peak Flux", "Fluence", "Fluence Threshold"):
         assert tool.results_table()[column].dtype == "float64"
+
+
+def test_results_table_without_any_onset(tmp_path, monkeypatch):
+    # flat flux: no onset in any channel group
+    tool = synthetic_tool(tmp_path, monkeypatch, fake=FakeEPD())
+    for step in (tool.run_onsets, tool.run_spikes, tool.run_peaks, tool.run_fluences):
+        step()
+    table = tool.results_table()
+    assert table["Onset Time"].isna().all()
+    for column in ("Onset Resolution", "Peak Flux Resolution", "Fluence Resolution"):
+        assert table[column].isna().all() and table[column].dtype == "float64"

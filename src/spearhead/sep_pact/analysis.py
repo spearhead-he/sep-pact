@@ -887,7 +887,9 @@ class SEPPACT:
         for i, (column, values) in enumerate(columns.items(), start=1):
             table.insert(table.columns.get_loc("Onset Corrected") + i, column, values)
         for column in ("Onset Resolution", "Peak Flux Resolution", "Fluence Resolution"):
-            table[column] = pd.to_timedelta(table[column]).dt.total_seconds() / 60
+            # a column without any resolution (no onset in any channel group) has no timedelta type
+            table[column] = np.nan if table[column].isna().all() \
+                else pd.to_timedelta(table[column]).dt.total_seconds() / 60
         return table
 
     def save_results(self) -> None:
