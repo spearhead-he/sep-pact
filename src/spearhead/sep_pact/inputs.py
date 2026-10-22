@@ -6,6 +6,7 @@ import pandas as pd
 
 from .background import KEY_COLUMNS, WINDOW_INDEX, BackgroundWindows, order_error, split_event_rows
 from .conf import SEPPACT_parameters
+from .csv_files import SEPARATORS, csv_separator, parse_times
 from .shocks import combine_shocks, download_shocks, events_outside, read_shock_file
 
 
@@ -82,12 +83,17 @@ def event_list_layout(path: str, columns) -> str:
 
 def read_event_list(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Returns the times of the events of the CSV event list (indexed by Event No, with the columns of its layout), and
-    the background windows of its particles and sensors (see background.split_event_rows()); prints a message for each
-    time given more than once in the rows of an event, of which the last one is used"""
+    the background windows of its particles and sensors (see background.split_event_rows()); prints a message for a
+    column separator other than a comma (see csv_files.csv_separator()), and for each time given more than once in the
+    rows of an event, of which the last one is used"""
     if not path.lower().endswith(".csv"):
         raise ValueError(f"The event list {path} is not a CSV file. Event lists in Excel or other formats are not "
                          f"accepted; save it as CSV.")
-    df = pd.read_csv(path, header=0, skipinitialspace=True, skip_blank_lines=False, dtype={"Particle": str, "Sensor": str})
+    separator = csv_separator(path)
+    if separator != ",":
+        print(f"The event list {path} is read with {SEPARATORS[separator]} as the column separator.")
+    df = pd.read_csv(path, sep=separator, header=0, skipinitialspace=True, skip_blank_lines=False,
+                     dtype={"Particle": str, "Sensor": str})
     df.columns = df.columns.str.strip()
     df = df.rename(columns={df.columns[0]: "Event No"}).set_axis(range(2, len(df) + 2)).dropna(how="all")
     event_list_layout(path, [column for column in df.columns[1:] if column not in KEY_COLUMNS])
@@ -98,7 +104,8 @@ def read_event_list(path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
         if column in KEY_COLUMNS:
             continue
         # parsed before the rows of an event are compared
-        df[column] = pd.to_datetime(df[column], format="ISO8601").astype("datetime64[ns]")
+        df[column] = parse_times(df[column], lambda line, column=column: f"Line {line} of the event list {path}, "
+                                 f"{column}").astype("datetime64[ns]")
     for column in KEY_COLUMNS:
         if column not in df.columns:
             df[column] = ""

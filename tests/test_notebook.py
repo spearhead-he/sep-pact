@@ -225,6 +225,24 @@ def test_event_list_info(tmp_path, monkeypatch):
     assert tool.parameters.file_events == str(path)
 
 
+def test_event_list_info_of_a_list_separated_by_semicolons(tmp_path, monkeypatch):
+    tool = make_tool(tmp_path, monkeypatch)
+    path = tmp_path / "semicolons.csv"
+    path.write_text("Event No;Start Time;End Time\n1;2021-01-01 12:00;2021-01-02 12:00\n")
+    assert tool._events_info(str(path)) == ("1 event (datetime ranges), from 2021-01-01 12:00 to 2021-01-02 12:00; "
+                                            "columns separated by &#x27;;&#x27;")
+
+
+def test_event_list_info_with_the_windows_of_particles_and_sensors(tmp_path, monkeypatch):
+    tool = make_tool(tmp_path, monkeypatch)
+    path = tmp_path / "particles.csv"
+    path.write_text("Event No,Start Time,BG Start,BG End,End Time,Particle,Sensor\n"
+                    "1,2021-01-01 12:00,2021-01-01 12:00,2021-01-01 13:00,2021-01-02 12:00,,\n"
+                    "1,,2021-01-01 12:00,2021-01-01 14:00,,electrons,HET\n")
+    assert tool._events_info(str(path)) == ("1 event (datetime ranges with the background window), from 2021-01-01 12:00 "
+                                            "to 2021-01-02 12:00")
+
+
 def test_corrections_file_info(tmp_path, monkeypatch):
     tool = make_tool(tmp_path, monkeypatch)
     assert tool.widgets["file_corrections_info"].value == "No corrections: the onsets are chosen automatically."

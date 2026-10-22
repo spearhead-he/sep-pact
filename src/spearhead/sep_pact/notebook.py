@@ -16,7 +16,9 @@ from ipywidgets import widgets
 from matplotlib import pyplot as plt
 
 from .analysis import SEPPACT
+from .background import KEY_COLUMNS
 from .conf import SEPPACT_parameters
+from .csv_files import SEPARATORS, csv_separator
 from .data import CACHE_FILE, SAVE_EVERY, load_energies
 from .inputs import (EVENT_LIST_LAYOUTS, count, event_list_layout, make_events, read_corrections, read_events,
                      shock_warnings)
@@ -207,7 +209,8 @@ class SEPPACT_notebook:
         return widgets.VBox([
             _section("Event list", field_events,
                      _note(f"A CSV file with the column Event No, then one of: {layouts}; optionally Particle and Sensor, "
-                           "for the background windows of particles and sensors. See the user guide.")),
+                           "for the background windows of particles and sensors. The columns are separated by commas, "
+                           "semicolons or tabs, and the times are YYYY-MM-DD HH:MM:SS (UTC). See the user guide.")),
             _section("Date ranges, used without an event list", wgt_ranges),
             section_shocks,
             _section("Event windows",
@@ -236,13 +239,17 @@ class SEPPACT_notebook:
         if not os.path.isfile(path):
             return _error_text(f"File not found: {path}")
         try:
-            columns = pd.read_csv(path, nrows=0, index_col=0, skipinitialspace=True).columns.str.strip()
-            layout = event_list_layout(path, list(columns))
+            separator = csv_separator(path)
+            columns = pd.read_csv(path, sep=separator, nrows=0, index_col=0, skipinitialspace=True).columns.str.strip()
+            layout = event_list_layout(path, [column for column in columns if column not in KEY_COLUMNS])
             events = read_events(path, self.parameters)
         except (ValueError, KeyError) as e:
             return _error_text(str(e))
-        return html.escape(f"{count(len(events), 'event')} ({layout}), from {events['Start Time'].min():%Y-%m-%d %H:%M} "
-                           f"to {events['End Time'].max():%Y-%m-%d %H:%M}")
+        text = (f"{count(len(events), 'event')} ({layout}), from {events['Start Time'].min():%Y-%m-%d %H:%M} to "
+                f"{events['End Time'].max():%Y-%m-%d %H:%M}")
+        if separator != ",":
+            text += f"; columns separated by {SEPARATORS[separator]}"
+        return html.escape(text)
 
     def _date_ranges_widget(self) -> widgets.VBox:
         """One row with the start and end of each event, and a button to add events"""

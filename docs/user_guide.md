@@ -42,7 +42,7 @@ All the parameters are in the form at the top of the notebook (`tool.parameters_
 
 | Field | Parameter | Default | Description |
 |---|---|---|---|
-| Event list | `file_events` | `inputs/events_example.csv` | Path of the [event list](#event-list). Below the path, the number of events, the layout of the list and the range of the events, or why the file cannot be read. Leave it blank to use the date ranges |
+| Event list | `file_events` | `inputs/events_example.csv` | Path of the [event list](#event-list). Below the path, the number of events, the layout of the list, the range of the events and the column separator if it is not a comma, or why the file cannot be read. Leave it blank to use the date ranges |
 | Date ranges | `date_ranges` | none | The start and end of each event, used without an event list; "Add event" and "Remove event" add and remove events |
 | Shock list online | `shock_source` | SODA | The [shock list online](#shocks): SODA, IRFU or None; below it, its number of shocks and their range |
 | Shock list file | `file_shocks` | none | Path of a [shock list file](#shocks), with its number of shocks and their range. Leave it blank for none |
@@ -150,7 +150,9 @@ Event No,Start Time,BG Start,BG End,End Time
 - The data range is extended to `min_plot_window` if it is shorter; the onset itself is always detected in the data, at or after `BG End` (see [Onset](#onset-step)).
 - An event can have more than one row: each time is the last one given in its rows (see [below](#bg-windows-of-particles)).
 
-The times are in UTC, as `YYYY-MM-DD HH:MM:SS` or `YYYY-MM-DD HH:MM` (ISO 8601). The columns may be in any order, and spaces after the commas are allowed.
+The times are in UTC, as `YYYY-MM-DD HH:MM:SS` or `YYYY-MM-DD HH:MM` (ISO 8601). A time in another format, e.g. `01/11/2021 10:00`, is an error that gives its line and column; formats like this one are not guessed, because the order of the day and month depends on the country. Spreadsheet programs can change the format of the times when they save a CSV file: set the format of the time cells to `YYYY-MM-DD HH:MM:SS` before saving.
+
+The columns may be in any order, and spaces after the separators are allowed. The column separator is a comma, a semicolon or a tab: the one that splits the header line into the most columns. A separator other than a comma is shown in the summary of the event list in the form and in a message of the data step, so that a wrong detection can be seen. Files saved by Excel as "CSV UTF-8" are read too.
 
 Without an event list, the events are the date ranges of the form (`date_ranges`), with the default background window.
 
@@ -212,7 +214,7 @@ The analysis of a channel group ends at the first interplanetary shock after its
 - **Shock list file** (`file_shocks`), in one of these formats:
   - an [ipshocks](https://ipshocks.helsinki.fi/) list: lines starting with `#` are comments, and the first six columns, separated by `;`, are the year, month, day, hour, minute and second of the shock;
   - the IRFU list (`.txt`), as downloaded from Zenodo;
-  - a CSV file with the column `Shock Time` (`YYYY-MM-DD HH:MM:SS`, UTC).
+  - a CSV file with the column `Shock Time` (`YYYY-MM-DD HH:MM:SS`, UTC), separated by commas, semicolons or tabs as the [event list](#event-list).
 
   `inputs/` has an example of each format, with shocks around the example event: `shocks_ipshocks_example.dat`, `shocks_irfu_example.txt` and `shocks_example.csv`:
 

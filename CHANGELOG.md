@@ -10,6 +10,7 @@ All notable changes of SEP-PACT. The format is based on [Keep a Changelog](https
 - `results.csv` columns `BG Start` and `BG End`, the background window of each channel group.
 - Shock sources: a shock list online (`shock_source`: [SODA](https://parker.gsfc.nasa.gov/shocks.html), the default, [IRFU](https://doi.org/10.5281/zenodo.11091062), or None), downloaded when the tool runs; a shock list file (`file_shocks`) in the ipshocks, IRFU or CSV (`Shock Time`) format; and custom shocks (`shock_times`), with "Add shock" in the form. The list of the shocks during the events, with their source, where shocks can be removed (`removed_shocks`). Warnings when there are no shocks and about the events outside the shock lists. In scripts, `tool.shocks` has the shocks with their source. Example shock list files in each format in `inputs/`. See [Shocks](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#shocks).
 - The data step goes on when the data of an event cannot be loaded: the event is left out with its error (`tool.skipped_events`), the others are analysed, and the step lists the events left out; running it again tries them again. `save_events()` keeps them. See [Data](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#data-step).
+- Event lists and CSV shock lists separated by semicolons or tabs, as saved by spreadsheet programs in some countries: the separator is detected from the header line, and a separator other than a comma is shown in the summary of the event list in the form and in a message of the data step. See [Event list](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#event-list).
 - The user guide explains that the onset is never before the end of the background window, and that choosing the windows is up to the user ([Onset](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#onset-at-bg-end)).
 
 ### Changed
@@ -22,6 +23,8 @@ All notable changes of SEP-PACT. The format is based on [Keep a Changelog](https
 
 ### Fixed
 
+- A time of the event list or of a CSV shock list in another format than `YYYY-MM-DD HH:MM:SS` gave the error of pandas; the error now names the line (for the event list), the column and the time, with a hint for files saved by spreadsheet programs.
+- The summary of the event list in the form was an error for event lists with the columns `Particle` and `Sensor`.
 - The results table failed when no channel group of any event had an onset.
 - With pandas 3.1, the resampled flux was float64 instead of the float32 of the EPD data, and the peak flux and fluence differed from those with pandas 3.0 from about the 8th significant digit; the resampled flux keeps the type of the data.
 - The fluence calculation failed for a series without data points from the onset to the first shock after it, e.g. at a coarse resolution with a shock a few minutes after the onset; such a series has no fluence.
