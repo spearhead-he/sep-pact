@@ -23,6 +23,16 @@ RESULT_COLUMNS = ["Onset Time", "Onset Resolution", "Onset Viewing", "Onset Copi
                   "Fluence", "Fluence Start", "Fluence End", "Fluence Threshold", "Fluence Resolution", "Fluence Viewing"]
 # the fewest points of a background window without a warning
 MIN_BG_POINTS = 3
+# the numbers of results.csv: 7 significant digits, the precision of the float32 flux of EPD
+FLOAT_FORMAT = "%.7g"
+
+
+def minutes(resolutions: pd.Series) -> pd.Series:
+    """Returns the resolutions (timedeltas, or missing) in whole minutes, missing ones as <NA>"""
+    # a column without any resolution (e.g. no onset in any channel group) has no timedelta type
+    if resolutions.isna().all():
+        return pd.Series(pd.NA, index=resolutions.index, dtype="Int64")
+    return (pd.to_timedelta(resolutions).dt.total_seconds() / 60).round().astype("Int64")
 
 
 def shocks_in_range(shocktimes: pd.Series, start: datetime, end: datetime) -> list[datetime]:
@@ -269,9 +279,9 @@ def choose_onset(rows: pd.DataFrame, reference_onset, reference_onset_window: ti
 
 
 def _no_onset() -> dict:
-    """The onset columns of df_results of a channel group without an onset"""
-    return {"Onset Time": pd.NaT, "Onset Resolution": pd.NaT, "Onset Viewing": None, "Onset Copied": None,
-            "Onset at BG End": None, **{column: np.nan for column in QUALITY_COLUMNS}}
+    """The onset columns of df_results of a channel group without an onset; its flags are False, as Onset Corrected"""
+    return {"Onset Time": pd.NaT, "Onset Resolution": pd.NaT, "Onset Viewing": None, "Onset Copied": False,
+            "Onset at BG End": False, **{column: np.nan for column in QUALITY_COLUMNS}}
 
 
 def _onset_of(row: pd.Series, resolution, viewing: str, bg_end: datetime) -> dict:
@@ -774,9 +784,10 @@ class SEPPACT:
         rows = []
         for key, correction in self.corrections.items():
             resolution, viewing = correction if correction is not None else (None, None)
-            rows.append([*key, None if resolution is None else resolution.total_seconds() / 60, viewing,
-                         self.df_results.loc[key, "Onset Time"]])
-        pd.DataFrame(rows, columns=CORRECTION_COLUMNS).to_csv(path, index=False, date_format="%Y-%m-%d %H:%M:%S")
+            rows.append([*key, resolution, viewing, self.df_results.loc[key, "Onset Time"]])
+        df = pd.DataFrame(rows, columns=CORRECTION_COLUMNS)
+        df["Onset Resolution"] = minutes(df["Onset Resolution"])
+        df.to_csv(path, index=False, date_format="%Y-%m-%d %H:%M:%S")
 
     def _is_reference(self, channel: tuple) -> bool:
         """Returns whether (particle, sensor, group label) is the reference channel"""
@@ -915,13 +926,12 @@ class SEPPACT:
         for i, (column, values) in enumerate(columns.items(), start=1):
             table.insert(table.columns.get_loc("Onset Corrected") + i, column, values)
         for column in ("Onset Resolution", "Peak Flux Resolution", "Fluence Resolution"):
-            # a column without any resolution (no onset in any channel group) has no timedelta type
-            table[column] = np.nan if table[column].isna().all() \
-                else pd.to_timedelta(table[column]).dt.total_seconds() / 60
+            table[column] = minutes(table[column])
         return table
 
     def save_results(self) -> None:
-        """Writes results.csv, the long table of results_table(), to dir_outputs"""
+        """Writes results.csv, the long table of results_table(), to dir_outputs, with the numbers to FLOAT_FORMAT"""
         p = self.params
         os.makedirs(p.dir_outputs, exist_ok=True)
-        self.results_table().to_csv(pjoin(p.dir_outputs, "results.csv"), index=False, date_format="%Y-%m-%d %H:%M:%S")
+        self.results_table().to_csv(pjoin(p.dir_outputs, "results.csv"), index=False, date_format="%Y-%m-%d %H:%M:%S",
+                                    float_format=FLOAT_FORMAT)

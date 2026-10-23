@@ -175,7 +175,7 @@ def test_choose_onset_within_the_window_of_the_reference_onset():
     rows = channel_rows({(2, "sun"): onset_row(0)})
     chosen = choose_onset(rows, pd.Timestamp(T0 + timedelta(hours=3)), WINDOW, T0 - timedelta(hours=1))
     assert pd.isna(chosen["Onset Time"]) and pd.isna(chosen["Onset Resolution"]) and chosen["Onset Viewing"] is None
-    assert chosen["Onset Copied"] is None and pd.isna(chosen["Quality Length"])
+    assert chosen["Onset Copied"] is False and chosen["Onset at BG End"] is False and pd.isna(chosen["Quality Length"])
 
 
 def test_choose_onset_flags():
