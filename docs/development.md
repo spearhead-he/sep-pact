@@ -102,6 +102,8 @@ pip download --no-deps --index-url https://test.pypi.org/simple/ spearhead-sep-p
 pip install "dist_test/spearhead_sep_pact-1.0.0-py3-none-any.whl[notebook]"
 ```
 
+Zenodo archives each published GitHub release under the DOI of all versions, [10.5281/zenodo.20157436](https://doi.org/10.5281/zenodo.20157436), with the metadata of `.zenodo.json`: title, description, authors, license, keywords and grant. Keep its authors in step with `CITATION.cff`. Without `.zenodo.json`, Zenodo would read `CITATION.cff`, whose `doi` (the DOI of all versions) makes the archiving fail.
+
 To build and check the package locally:
 
 ```bash

@@ -4,6 +4,10 @@ All notable changes of SEP-PACT. The format is based on [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Fixed
+
+- Zenodo archives the releases again, with the metadata of the new `.zenodo.json`: versions 0.2.0 to 1.0.0 were not archived, because Zenodo cannot use the DOI of all versions in `CITATION.cff` as the DOI of a version. Version 1.0.1 has the same code as 1.0.0.
+
 ## [1.0.0] - 2026-10-23
 
 ### Added
