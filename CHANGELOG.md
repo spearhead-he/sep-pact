@@ -4,9 +4,15 @@ All notable changes of SEP-PACT. The format is based on [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-23
+
 ### Fixed
 
-- Zenodo archives the releases again, with the metadata of the new `.zenodo.json`: versions 0.2.0 to 1.0.0 were not archived, because Zenodo cannot use the DOI of all versions in `CITATION.cff` as the DOI of a version. Version 1.0.1 has the same code as 1.0.0.
+- Zenodo archives the releases again, with the metadata of the new `.zenodo.json`: versions 0.2.0 to 1.0.0 were not archived, because Zenodo cannot use the DOI of all versions in `CITATION.cff` as the DOI of a version.
+
+### Upgrading from 1.0.0
+
+- Nothing to do: the code is the same as in 1.0.0, and the results do not change.
 
 ## [1.0.0] - 2026-10-23
 
@@ -116,7 +122,8 @@ All notable changes of SEP-PACT. The format is based on [Keep a Changelog](https
 
 First release: onset time, peak flux and fluence of electrons and protons in Solar Orbiter EPD/HET data, at several resolutions and viewings, with one plot per event.
 
-[Unreleased]: https://github.com/spearhead-he/sep-pact/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/spearhead-he/sep-pact/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/spearhead-he/sep-pact/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/spearhead-he/sep-pact/compare/v0.3.0...v1.0.0
 [0.3.0]: https://github.com/spearhead-he/sep-pact/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/spearhead-he/sep-pact/compare/v0.1.0...v0.2.0
