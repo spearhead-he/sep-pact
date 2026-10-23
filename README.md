@@ -11,9 +11,11 @@
   - [About](#about)
   - [How to install](#how-to-install)
   - [How to use](#how-to-use)
+    - [Quick start](#quick-start)
   - [Example output](#example-output)
   - [What's new in v0.3.0](#whats-new-in-v030)
   - [Documentation](#documentation)
+  - [How to cite](#how-to-cite)
   - [Contributing](#contributing)
   - [Acknowledgement](#acknowledgement)
 
@@ -45,6 +47,12 @@ You can access SEP-PACT online on the JupyterHub server of the SPEARHEAD project
 5. Open the notebook: `jupyter-lab sep-pact.ipynb`.
 
 ## How to use
+
+### Quick start
+
+Open `sep-pact.ipynb` and run all its cells with the defaults. They analyse the example event of 2021-11-01 (`inputs/events_example.csv`): the run takes about a minute, and downloads 25 MB of data (16 files) into `data/`. It writes the results of the five channel groups to `outputs/results.csv` and their plot to `plots/event_020.png`, the plot shown in [Example output](#example-output).
+
+### Steps
 
 Open `sep-pact.ipynb` and run its cells in order:
 
@@ -93,6 +101,14 @@ The results do not change unless the event times or the onsets are changed; `res
 - [Library guide](https://github.com/spearhead-he/sep-pact/blob/main/docs/library.md): using the package in scripts, its modules and their main functions.
 - [Development](https://github.com/spearhead-he/sep-pact/blob/main/docs/development.md): the development installation, the tests and their commands, the baseline images and the continuous integration.
 - [Changelog](https://github.com/spearhead-he/sep-pact/blob/main/CHANGELOG.md): the changes of each version.
+
+## How to cite
+
+If you use SEP-PACT in your work, please cite it with its DOI, [10.5281/zenodo.20157436](https://doi.org/10.5281/zenodo.20157436), which always resolves to the latest version; the Zenodo page also gives the DOI of each version. For example:
+
+> Vasalos, G., Gieseler, J., & Papaioannou, A. SPEARHEAD SEP-PACT tool. Zenodo. https://doi.org/10.5281/zenodo.20157436
+
+GitHub gives the same reference in other formats, e.g. BibTeX, under "Cite this repository" on the [repository page](https://github.com/spearhead-he/sep-pact), from [`CITATION.cff`](https://github.com/spearhead-he/sep-pact/blob/main/CITATION.cff).
 
 ## Contributing
 
