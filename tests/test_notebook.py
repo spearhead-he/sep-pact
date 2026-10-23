@@ -368,6 +368,31 @@ def test_event_times(tmp_path, monkeypatch, shown):
     assert "Run the analysis step again" not in w["bg_status"].value
 
 
+def test_event_times_plot_resolution_and_viewing(tmp_path, monkeypatch, shown):
+    tool = make_tool(tmp_path, monkeypatch, events={1: {"Reference Time": T0}, 2: {"Reference Time": T0 + timedelta(days=3)}})
+    tool.run_data()
+    calls = []
+    real = notebook.plot_background
+    monkeypatch.setattr(notebook, "plot_background", lambda *args, **kwargs: calls.append(kwargs) or real(*args, **kwargs))
+    tool.event_times()
+    w = tool.widgets
+    # the finest resolution and the first viewing of the analysis by default
+    assert [option for option, _ in w["bg_resolution"].options] == ["2 min", "5 min", "10 min", "30 min"]
+    assert list(w["bg_viewing"].options) == ["sun", "asun", "north", "south"]
+    assert calls[-1] == {"resolution": timedelta(minutes=2), "viewing": "sun"}
+    sliders = (w["bg_window"].options, w["bg_window"].index, w["end_time"].options)
+    plot = w["bg_plot"].value
+    w["bg_resolution"].value = timedelta(minutes=30)
+    w["bg_viewing"].value = "north"
+    assert calls[-1] == {"resolution": timedelta(minutes=30), "viewing": "north"} and w["bg_plot"].value != plot
+    # the sliders stay on the points of the finest resolution, and the window unchanged
+    assert (w["bg_window"].options, w["bg_window"].index, w["end_time"].options) == sliders
+    assert bg_window(tool)[2] == "default"
+    # the choice stays for the next event
+    w["bg_event"].value = 2
+    assert calls[-1] == {"resolution": timedelta(minutes=30), "viewing": "north"}
+
+
 def end_time(tool, event_no=1) -> list:
     return list(tool.events.loc[event_no, ["End Time", "End Time Source"]])
 

@@ -376,15 +376,21 @@ def plot_event(tool, event_no: int, filename: str | None = None) -> Figure:
 
 
 @_with_font_sizes
-def plot_background(tool, event_no: int, filename: str | None = None) -> Figure:
+def plot_background(tool, event_no: int, filename: str | None = None, resolution: timedelta | None = None,
+                    viewing: str | None = None) -> Figure:
     """Returns the plot of the background windows of an event, and saves it to filename if one is given: one panel per
-    particle and sensor with the flux of all its channel groups, at the finest resolution in the first viewing, and
-    its window shaded; the title of a panel with its own window gives the window
+    particle and sensor with the flux of all its channel groups at the resolution and in the viewing (by default the
+    finest resolution and the first viewing of the analysis), and its window shaded; the title of a panel with its own
+    window gives the window
 
-    tool is a SEPPACT after run_data().
+    tool is a SEPPACT after run_data(); resolution is one of resample_freqs, and viewing one of viewings.
     """
     p = tool.params
-    resample_freq, viewing = p.resample_freqs[0], p.viewings[0]
+    resample_freq = p.resample_freqs[0] if resolution is None else resolution
+    viewing = p.viewings[0] if viewing is None else viewing
+    if resample_freq not in p.resample_freqs or viewing not in p.viewings:
+        raise ValueError(f"The resolution and viewing of the plot must be ones of the analysis: "
+                         f"{', '.join(minutes_text(freq) for freq in p.resample_freqs)}; {', '.join(p.viewings)}.")
     panels = [(particle, sensor) for particle in reference_iter(tool.particles, tool.reference_channel)
               for sensor in reference_iter(tool.sensors[particle], tool.reference_channel)]
     fig, axs = plt.subplots(figsize=(PLOT_WIDTH, plot_height(p.panel_height, len(panels))), nrows=len(panels), ncols=1,
