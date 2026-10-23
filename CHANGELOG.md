@@ -32,6 +32,7 @@ All notable changes of SEP-PACT. The format is based on [Keep a Changelog](https
 
 ### Fixed
 
+- The download of a shock list online waits up to 60 s for the server instead of 30 s: the IRFU list on Zenodo could take longer, and was then left out with a warning.
 - A time of the event list or of a CSV shock list in another format than `YYYY-MM-DD HH:MM:SS` gave the error of pandas; the error now names the line (for the event list), the column and the time, with a hint for files saved by spreadsheet programs.
 - The summary of the event list in the form was an error for event lists with the columns `Particle` and `Sensor`.
 - The results table failed when no channel group of any event had an onset.

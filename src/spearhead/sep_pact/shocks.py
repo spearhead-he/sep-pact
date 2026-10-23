@@ -21,8 +21,8 @@ SODA_URL = "https://parker.gsfc.nasa.gov/static_data/soda2/soda.json"
 # Solar Orbiter in SODA
 SODA_SPACECRAFT = "SLO"
 IRFU_RECORD_URL = "https://zenodo.org/api/records/14001054/versions/latest"
-# seconds to wait for a server
-TIMEOUT = 30
+# seconds to wait for a server; the IRFU list on Zenodo can take more than 30
+TIMEOUT = 60
 # the columns of the table of the shocks
 SHOCK_COLUMNS = ["Shock Time", "Source"]
 SHOCK_FILE_FORMATS = ("an ipshocks list (.dat, with the year, month, day, hour, minute and second separated by ';')",
