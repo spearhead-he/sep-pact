@@ -7,6 +7,7 @@ step before the rise time, when the rise time is on a bin boundary.
 """
 import functools
 import os
+import sys
 from datetime import datetime, timedelta
 
 import matplotlib
@@ -203,3 +204,21 @@ def synthetic_tool(tmp_path,
     tool.run_inputs()
     tool.run_data()
     return tool
+
+
+# what tqdm writes to stderr for one download of solo-epd-loader: the bar redrawn with carriage returns
+DOWNLOAD_BAR_OUTPUT = ("solo_L2_epd-het-sun-rates_20211103_V01.cdf: 0.00B [00:00, ?B/s]\r"
+                       "solo_L2_epd-het-sun-rates_20211103_V01.cdf:  37%|███▋      | 557k/1.52M [00:00<00:00, 1.06MB/s]\r"
+                       "solo_L2_epd-het-sun-rates_20211103_V01.cdf: 1.52MB [00:01, 1.10MB/s]\n")
+
+
+class DownloadingEPD(FakeEPD):
+    """FakeEPD that writes a file into the data folder at each call, as a download does, with its progress bar and a
+    warning on stderr as solo-epd-loader and its dependencies write them"""
+
+    def __call__(self, sensor, level, startdate, enddate, viewing, path, autodownload) -> tuple:
+        os.makedirs(path, exist_ok=True)
+        open(os.path.join(path, f"file_{len(self.calls)}.cdf"), "w").close()
+        sys.stderr.write(DOWNLOAD_BAR_OUTPUT)
+        sys.stderr.write("UserWarning: a warning of the loader\n")
+        return super().__call__(sensor, level, startdate, enddate, viewing, path, autodownload)

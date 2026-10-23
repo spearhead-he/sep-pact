@@ -94,7 +94,7 @@ One row per channel group (`group_options`), in the order of the panels of the p
 - "Reference channel": at most one group (see [Onset](#onset-step));
 - "Remove", and the buttons "Add electron group" and "Add proton group" above the groups.
 
-The energy ranges of the channels are read from the data of the first event of the event list. If they cannot be read, e.g. without a connection to the data server, the groups are listed without the editor, with the error and a button to read the channels again.
+The energy ranges of the channels are read from the data of the first event of the event list, with one line above the form, e.g. "Reading the energies of the HET channels from the data of event 20 (2021-10-31 to 2021-11-03)... done, 16 files downloaded." If they cannot be read, e.g. without a connection to the data server, the groups are listed without the editor, with the error and a button to read the channels again.
 
 The default groups are:
 
@@ -268,7 +268,7 @@ The analysis uses the parameters of the form when the data step runs; after a ch
 
 The data of each event, viewing and sensor are downloaded from the Solar Orbiter Archive with [solo-epd-loader](https://github.com/jgieseler/solo-epd-loader) into `dir_data`, for the period from the background start to the end time, extended to `min_plot_window`. Files already in `dir_data` are not downloaded again. The channels of each group are combined, weighted by their energy widths.
 
-The step shows the progress of each event. An event whose data cannot be loaded, after `download_tries` tries, is left out with its error, e.g. when the data server is unavailable or there are no data for its period, and the other events go on. At the end, the step lists the events left out; they are not analysed, and running the data step again tries them again. The [event list saved](#event-times-step) in the event times step keeps them. If no event can be loaded, the step stops with the error.
+The step first reads the energies of the channels from the data of the first event that has them, in one line as in the form, then shows one line per event, with the number of files downloaded and the progress. The progress bars of the downloads of solo-epd-loader are not shown; its other messages are. An event whose data cannot be loaded, after `download_tries` tries, is left out with its error, e.g. when the data server is unavailable or there are no data for its period, and the other events go on. At the end, the step lists the events left out; they are not analysed, and running the data step again tries them again. The [event list saved](#event-times-step) in the event times step keeps them. If no event can be loaded, the step stops with the error.
 
 **Cache** (`cache_data`, off by default; Advanced section of the Data tab): for event lists of many events. The flux of the channel groups of each event is kept in `flux_cache.pkl` in `dir_saves`, one entry per event, for its times, the level, the viewings and the channel groups. The file is saved every 10 newly loaded events, at the end, and when the data step stops (an error, or the stop button), so that the events already loaded are kept. Later runs load the events from the cache, and only the new or changed events from the data files. The file keeps the entries of events that are no longer used; delete it to clear the cache. Without the cache, every run loads the events from the data files in `dir_data`, which are downloaded only once.
 

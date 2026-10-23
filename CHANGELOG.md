@@ -18,6 +18,7 @@ All notable changes of SEP-PACT. The format is based on [Keep a Changelog](https
 
 ### Changed
 
+- The downloads show one line instead of a progress bar per file: the form cell, when it reads the energies of the channels, and the data step, which gives one line for the energies and one per event, with the number of files downloaded.
 - The cache of the flux is optional (`cache_data`, off by default; Data tab, Advanced section, with a note that recommends it for 10 events or more). It is one file, `flux_cache.pkl`, with an entry per event, saved every 10 events, at the end and when the data step stops; later runs load only the new or changed events from the data files. The former cache files (`dfs_flux_*.pkl`) are no longer used and can be deleted.
 - The default shocks are those of SODA, instead of the ipshocks list `inputs/shocks.dat` (70 shocks from 2021-06-13 to 2023-12-29), which is no longer in the repository; `file_shocks` is empty by default. SODA has 171 Solar Orbiter shocks from 2020-10-14 to 2025-02-28.
 - The rows of an event list with the same `Event No` are read as one event: each time is the last one given, with a message when the rows differ. Before, they were read as separate events with the same number.
