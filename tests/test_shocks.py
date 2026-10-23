@@ -1,4 +1,5 @@
 """Tests of the shocks: the shock lists online (SODA, IRFU), the shock list files and their combination"""
+import io
 import json
 
 import pandas as pd
@@ -8,6 +9,9 @@ from spearhead.sep_pact import shocks
 from spearhead.sep_pact.shocks import (combine_shocks, download_shocks, events_outside, parse_irfu, parse_soda,
                                        read_shock_file)
 from tests.conftest import DATA
+
+# the download of the shock lists online, which the offline tests replace with their copies
+REAL_GET = shocks._get
 
 
 def times(*values) -> list:
@@ -123,3 +127,14 @@ def test_events_outside():
 def test_download_shocks_online(source):
     downloaded = download_shocks(source)
     assert len(downloaded) > 50 and downloaded.min() < pd.Timestamp("2021-01-01")
+
+
+def test_download_waits_60_seconds_for_the_server(monkeypatch):
+    timeouts = []
+
+    def urlopen(url, timeout):
+        timeouts.append(timeout)
+        return io.BytesIO(b"content")
+
+    monkeypatch.setattr(shocks.urllib.request, "urlopen", urlopen)
+    assert REAL_GET(shocks.SODA_URL) == b"content" and timeouts == [60]
