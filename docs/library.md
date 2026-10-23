@@ -15,13 +15,13 @@ The notebook `sep-pact.ipynb` uses the package `spearhead.sep_pact`, which can a
 
 ## Installation
 
-From the repository folder:
+From PyPI, without the notebook dependencies:
 
 ```bash
-pip install -e .
+pip install spearhead-sep-pact
 ```
 
-`pip install -e ".[notebook]"` also installs the notebook dependencies, and `pip install -e ".[test]"` the test dependencies.
+`pip install "spearhead-sep-pact[notebook]"` also installs the notebook dependencies. From the repository folder, `pip install -e .` installs the code of the repository, with the extras `notebook` and `test` (the test dependencies).
 
 ## A minimal script
 
