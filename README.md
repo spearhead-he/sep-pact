@@ -14,7 +14,7 @@
   - [How to use](#how-to-use)
     - [Quick start](#quick-start)
   - [Example output](#example-output)
-  - [What's new in v0.3.0](#whats-new-in-v030)
+  - [What's new in v1.0.0](#whats-new-in-v100)
   - [Documentation](#documentation)
   - [How to cite](#how-to-cite)
   - [Contributing](#contributing)
@@ -98,13 +98,16 @@ The plot of the example event (2021-11-01) has one panel per channel group: 1 Me
 
 A red title marks a channel group without an onset, and an orange title one with its onset at the end of the background window. The [user guide](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#plots) explains every element of the plot.
 
-## What's new in v0.3.0
+## What's new in v1.0.0
 
-- **Event times:** a new notebook step, `tool.event_times()`, sets the background window and the end time of each event with sliders over its data, warns about background windows with too few points, and saves the event list with the times for later runs. See [Event times](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#event-times-step).
-- **Onset corrections:** in the event viewer, the onset of each channel group can be set to another detected onset or to no onset; the peak flux and fluence are calculated again, and the corrections can be saved and applied in later runs. See [Onset corrections](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#onset-corrections).
-- **Plots:** a legend entry for every line, grouped by quantity, more distinct line styles, and orange panel titles for onsets at the end of the background window.
+- **Install from PyPI:** `pip install "spearhead-sep-pact[notebook]"`, then `spearhead-sep-pact-notebooks` downloads the notebook and its example files. See [How to install](#how-to-install).
+- **Shocks:** the shock list online, [SODA](https://parker.gsfc.nasa.gov/shocks.html) by default or [IRFU](https://doi.org/10.5281/zenodo.11091062), a shock list file and shocks of your own, with the list of the shocks during the events, where shocks can be removed, and warnings for the events outside the lists. See [Shocks](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#shocks).
+- **Background windows of particles and sensors:** an event list or the event times step can give a particle, or a particle and sensor, its own background window. See [Background windows of particles and sensors](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#bg-windows-of-particles).
+- **Robust data step:** an event whose data cannot be loaded is left out with its error instead of stopping the run, and an optional cache keeps the loaded events of long lists. Event lists separated by semicolons or tabs are read, and times in another format give a clear error.
+- **Plots for papers and presentations,** with the results of each channel group in a legend inside its panel, and the event times plot at any resolution and viewing of the analysis. See [Plots](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#plots).
+- **Documentation:** a [Method](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#method) section, the unit of each column of `results.csv`, a quick start and How to cite.
 
-The results do not change unless the event times or the onsets are changed; `results.csv` has three new columns. See the [CHANGELOG](https://github.com/spearhead-he/sep-pact/blob/main/CHANGELOG.md) for all the changes and how to upgrade.
+The results change where the shocks of SODA differ from those of the former shock list: on a list of 212 Solar Orbiter events, 73 of the 1060 rows of `results.csv`, in 31 events. `results.csv` is written with 7 significant digits and with the resolutions in whole minutes. See the [CHANGELOG](https://github.com/spearhead-he/sep-pact/blob/main/CHANGELOG.md) for all the changes and how to upgrade.
 
 ## Documentation
 
