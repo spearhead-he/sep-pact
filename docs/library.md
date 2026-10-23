@@ -180,7 +180,7 @@ protons = results[results["Particle"] == "protons"]
 
 ## Plots
 
-`spearhead.sep_pact.views.plot_event(tool, event_no, filename=None)` returns the plot of one event as a matplotlib `Figure`, and saves it if a file name is given. `event_plot_filename(tool, event_no)` gives the file name that `plot_events()` uses in `dir_plots`. `plot_background(tool, event_no, filename=None)` returns the plot of the event times step: the flux of all the channel groups per particle and sensor, with the background window of each panel and the start and end times.
+`spearhead.sep_pact.views.plot_event(tool, event_no, filename=None)` returns the plot of one event as a matplotlib `Figure`, and saves it if a file name is given. `event_plot_filename(tool, event_no)` gives the file name that `plot_events()` uses in `dir_plots`. `plot_background(tool, event_no, filename=None, resolution=None, viewing=None)` returns the plot of the event times step: the flux of all the channel groups per particle and sensor, at a resolution of `resample_freqs` (a `timedelta`) and in a viewing of `viewings` (by default the finest and the first), with the background window of each panel and the start and end times.
 
 ```python
 from spearhead.sep_pact.views import plot_event

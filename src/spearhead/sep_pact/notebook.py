@@ -886,13 +886,25 @@ class SEPPACT_notebook:
         self.widgets.update({"events_path": wgt_path, "save_events": btn_save, "events_saved": wgt_saved})
         return widgets.VBox([widgets.HBox([wgt_path, btn_save]), wgt_saved])
 
+    def _plot_view_widgets(self) -> tuple:
+        """The resolution and viewing of the plot of the event times, from those of the analysis (by default the finest
+        resolution and the first viewing); the sliders stay on the points of the finest resolution"""
+        p = self.seppact.params
+        wgt_resolution = widgets.Dropdown(options=[(f"{freq.total_seconds() / 60:g} min", freq) for freq in p.resample_freqs],
+                                          value=p.resample_freqs[0], description="Plot at:", style=self._style,
+                                          layout=widgets.Layout(width="max-content"))
+        wgt_viewing = widgets.Dropdown(options=p.viewings, value=p.viewings[0], description="viewing:",
+                                       style=self._style, layout=widgets.Layout(width="max-content"))
+        return wgt_resolution, wgt_viewing
+
     def event_times(self) -> None:
         """The background windows and the end time of the event chosen in the dropdown, set with the sliders, and its
         plot
 
         The window dropdown chooses the window of the event, or of a particle and sensor. The sliders go over the data
         points of the event at the finest resolution: from the start to the end time for the background window, and
-        from the end of the background windows to the end of the data for the end time.
+        from the end of the background windows to the end of the data for the end time. The plot shows the flux at the
+        resolution and in the viewing of its dropdowns, which keep their choice from one event to the next.
         """
         if not self._has_data():
             return
@@ -901,6 +913,7 @@ class SEPPACT_notebook:
                                                    "with background warnings")
         wgt_window = widgets.Dropdown(options=self._window_options(), value=("", ""), description="Window of:",
                                       style=self._style)
+        wgt_resolution, wgt_viewing = self._plot_view_widgets()
         wgt_bg = widgets.SelectionRangeSlider(options=[("", None)], description="Background:", continuous_update=False,
                                               style=self._style, layout=widgets.Layout(width="95%"))
         # a slider needs an option before it gets the times of the event
@@ -925,7 +938,8 @@ class SEPPACT_notebook:
             wgt_end.index = end_index
             updating["sliders"] = False
             wgt_status.value = self._times_status(wgt_event.value)
-            wgt_plot.value = _figure_png(plot_background(tool, wgt_event.value))
+            wgt_plot.value = _figure_png(plot_background(tool, wgt_event.value, resolution=wgt_resolution.value,
+                                                         viewing=wgt_viewing.value))
 
         def set_time(set_event_time, *values):
             if updating["sliders"]:
@@ -946,15 +960,18 @@ class SEPPACT_notebook:
 
         self.widgets.update({"bg_warned_only": wgt_warned, "bg_event": wgt_event, "bg_window_of": wgt_window,
                              "bg_window": wgt_bg, "end_time": wgt_end, "bg_reset": btn_reset, "bg_status": wgt_status,
-                             "bg_plot": wgt_plot})
+                             "bg_plot": wgt_plot, "bg_resolution": wgt_resolution, "bg_viewing": wgt_viewing})
         wgt_event.observe(show_event, names="value")
         wgt_window.observe(show_event, names="value")
+        # the plot at another resolution or in another viewing, with the same sliders
+        wgt_resolution.observe(show_event, names="value")
+        wgt_viewing.observe(show_event, names="value")
         wgt_bg.observe(lambda change: set_time(tool.set_bg_window, *change["new"], *wgt_window.value), names="value")
         wgt_end.observe(lambda change: set_time(tool.set_end_time, change["new"]), names="value")
         btn_reset.on_click(reset)
         show_event()
         display(widgets.VBox([wgt_warned, widgets.HBox([wgt_event, wgt_window, btn_reset]), wgt_bg, wgt_end, wgt_status,
-                              wgt_plot, self._save_events_widget()]))
+                              widgets.HBox([wgt_resolution, wgt_viewing]), wgt_plot, self._save_events_widget()]))
 
     def run_analysis(self) -> None:
         """Runs the onsets, spikes, peak flux and fluence steps, and summarises the chosen onsets"""

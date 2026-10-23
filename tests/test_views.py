@@ -292,6 +292,29 @@ def test_plot_event_with_the_window_of_a_particle(tmp_path, monkeypatch):
         [pd.Timestamp(T0 - timedelta(minutes=5))] * 2 + [pd.Timestamp(T0 - timedelta(minutes=10))] * 3
 
 
+def test_plot_background_at_a_resolution_and_in_a_viewing(tmp_path, monkeypatch):
+    tool = synthetic_tool(tmp_path, monkeypatch)
+    fig = plot_background(tool, 1, resolution=timedelta(minutes=30), viewing="north")
+    assert fig.get_suptitle().startswith("Event 1 (2021-01-01) | Solar Orbiter EPD, north viewing, 30 min\n")
+    # the flux at 30 min, in the north viewing
+    flux = tool.dfs_flux["electrons"]["HET"][timedelta(minutes=30)].loc[1, ("north", "1 MeV")]
+    line = fig.axes[0].get_lines()[0]
+    assert len(line.get_xdata()) == len(flux) and list(line.get_ydata()) == list(flux.values)
+
+
+@pytest.mark.parametrize("kwargs", [{"resolution": timedelta(minutes=15)}, {"viewing": "omni"}])
+def test_plot_background_at_a_resolution_or_viewing_not_analysed(tmp_path, monkeypatch, kwargs):
+    with pytest.raises(ValueError, match="The resolution and viewing of the plot must be ones of the analysis: 2 min, "
+                                         "5 min, 10 min, 30 min; sun, asun, north, south"):
+        plot_background(synthetic_tool(tmp_path, monkeypatch), 1, **kwargs)
+
+
+@image_compare
+def test_plot_background_at_30_min(tmp_path, monkeypatch):
+    tool = synthetic_tool(tmp_path, monkeypatch, events={1: bg_end_event(T0 - timedelta(minutes=5))})
+    return plot_background(tool, 1, resolution=timedelta(minutes=30))
+
+
 @image_compare
 def test_plot_background(tmp_path, monkeypatch):
     tool = synthetic_tool(tmp_path, monkeypatch, events={1: bg_end_event(T0 - timedelta(minutes=5))})
