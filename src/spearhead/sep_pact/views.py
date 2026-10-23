@@ -1,11 +1,13 @@
 """The plots, as matplotlib figures"""
 from datetime import timedelta
+from functools import wraps
 from types import SimpleNamespace
 
 import pandas as pd
 from matplotlib import dates as mdates
 from matplotlib import pyplot as plt
 from matplotlib.figure import Figure
+from matplotlib.legend import Legend
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
@@ -14,13 +16,38 @@ from .analysis import reference_iter, shocks_in_range
 
 # width of the plots, and height of the title, legend and axis labels together (inches); the height of each panel is
 # the panel_height parameter
-PLOT_WIDTH = 15
-MARGIN_HEIGHT = 1.5
+PLOT_WIDTH = 10
+MARGIN_HEIGHT = 2
+
+# the font sizes of the plots (points), from the largest: the title, the axis labels, the tick labels, the panel
+# titles, the legend, and the legends and texts in the panels; scaled to the width of a page (about 7 inches), the
+# smallest is still 7 points
+FONT_SIZES = {"figure.titlesize": 17, "figure.labelsize": 16, "xtick.labelsize": 14, "ytick.labelsize": 14,
+              "axes.titlesize": 13, "legend.fontsize": 12, "font.size": 10}
+
+
+def _with_font_sizes(plot):
+    """Makes the figure of the plot function with FONT_SIZES"""
+    @wraps(plot)
+    def wrapper(*args, **kwargs):
+        with plt.rc_context(FONT_SIZES):
+            return plot(*args, **kwargs)
+    return wrapper
 
 
 # colours of the panel titles of channel groups without an onset, and with the onset at the end of the background window
 NO_ONSET_COLOR = "red"
 BG_END_COLOR = "darkorange"
+# the shaded background window, blue-grey: unlike the brown fluence interval also for red-green colour blindness
+BG_WINDOW_STYLE = {"color": "steelblue", "alpha": 0.3}
+# the shaded fluence interval
+FLUENCE_STYLE = {"color": "brown", "alpha": 0.2}
+# the shaded analysis range, from the onset to the end time or the first shock after the onset
+ANALYSIS_RANGE_STYLE = {"color": "black", "alpha": 0.1}
+# as in the VDA tool
+FLUX_LABEL = r"Flux (cm$^{-2}$ s$^{-1}$ sr$^{-1}$ MeV$^{-1}$)"
+# the marker of the peak flux, in its panel and in its legend
+PEAK_MARKER = {"marker": "o", "linestyle": "", "color": "red"}
 
 # the zorder of the elements of the event plot, from the bottom: the shaded areas, the data (the flux of the fluence, of
 # the peak flux, then of the onset on top), the horizontal lines (levels and thresholds), the vertical lines (onset and
@@ -47,18 +74,68 @@ LINE_STYLES = {
     "shock": {"color": "deeppink", "linewidth": 1.5, "zorder": VERTICAL_ZORDER},
 }
 
-# the rows of the legend of an event plot
-LEGEND_ROWS = 2
+# the background of the labels in the corners of the panels, which keeps them readable over the data
+LABEL_BOX = {"facecolor": "white", "alpha": 0.7, "edgecolor": "none", "pad": 1}
+# the most ticks of the time axis, which stay apart in the width of the plot
+MAX_TIME_TICKS = 7
 
-# distance (points) of the panel title and the data quality text from the corners of the panel
+# distance (points) of the panel title and the corner labels from the corners of the panel
 CORNER_PADDING = 5
 
 
-def _corner_text(ax, text: str, top: bool, **kwargs):
-    """Writes the text inside the panel, in its top-right or bottom-right corner, whatever the size of the panel"""
-    return ax.annotate(text, xy=(1, 1 if top else 0), xycoords="axes fraction",
-                       xytext=(-CORNER_PADDING, -CORNER_PADDING if top else CORNER_PADDING), textcoords="offset points",
-                       horizontalalignment="right", verticalalignment="top" if top else "bottom", **kwargs)
+def _corner_text(ax, text: str, top: bool, left: bool = False, line: int = 0, **kwargs):
+    """Writes the text inside the panel, in one of its corners (top-right by default), whatever the size of the panel;
+    line is the number of lines of text before it from the corner"""
+    offset = CORNER_PADDING + line * 1.4 * plt.rcParams["font.size"]
+    return ax.annotate(text, xy=(0 if left else 1, 1 if top else 0), xycoords="axes fraction",
+                       xytext=(CORNER_PADDING if left else -CORNER_PADDING, -offset if top else offset),
+                       textcoords="offset points", horizontalalignment="left" if left else "right",
+                       verticalalignment="top" if top else "bottom", **kwargs)
+
+
+def _time_axis(ax) -> None:
+    """Labels the time axis with at most MAX_TIME_TICKS ticks, in the concise date format"""
+    locator = mdates.AutoDateLocator(maxticks=MAX_TIME_TICKS)
+    ax.xaxis.set_major_locator(locator)
+    ax.xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator))
+
+
+def number_text(value: float) -> str:
+    """Returns the number with 3 significant digits, as a power of ten (mathtext) below 0.01 and from 1000, e.g. 72.6,
+    0.518, 3.13×10$^{5}$"""
+    if 0.01 <= abs(value) < 1000:
+        return f"{value:.3g}"
+    mantissa, exponent = f"{value:.2e}".split("e")
+    return f"{mantissa}×10$^{{{int(exponent)}}}$"
+
+
+def minutes_text(resolution) -> str:
+    """Returns the resolution (a timedelta) in minutes, e.g. 2 min"""
+    return f"{resolution.total_seconds() / 60:g} min"
+
+
+def quality_text(length, n_zeroes, ratio) -> str:
+    """Returns the text of the data quality check of the onset series: its zero or missing points, and its ratio of
+    transitions to them (see analysis.quality_analysis())"""
+    if pd.isna(length) or pd.isna(n_zeroes):
+        return "quality: N/A"
+    ratio_text = "N/A" if pd.isna(ratio) else f"{ratio:.2f}"
+    return f"quality: {int(n_zeroes)} of {int(length)} points zero or missing, ratio {ratio_text}"
+
+
+def event_title(tool, event_no: int) -> str:
+    """Returns the title of the plot of an event, as in the VDA tool, e.g. Event 20 (2021-10-31) | Solar Orbiter EPD"""
+    return f"Event {event_no} ({tool.events.loc[event_no, 'Start Time']:%Y-%m-%d}) | Solar Orbiter EPD"
+
+
+def _panel_legend(ax, entries: list) -> None:
+    """Adds the legend of the results of a panel, [(handle, label)], in its bottom-right corner, on the semi-transparent
+    white background of the labels"""
+    legend = Legend(ax, [handle for handle, _ in entries], [label for _, label in entries], loc="lower right",
+                    fontsize=plt.rcParams["font.size"], facecolor=LABEL_BOX["facecolor"], framealpha=LABEL_BOX["alpha"],
+                    edgecolor=LABEL_BOX["edgecolor"])
+    legend.set_gid("panel_legend")
+    ax.add_artist(legend)
 
 
 def _panel_title(ax, text: str, color: str) -> None:
@@ -87,21 +164,18 @@ def _plot_no_onset(ax, tool, event_no: int, particle: str, sensor: str, mevlbl: 
     chosen = tool.df_results.loc[(event_no, particle, sensor, mevlbl)]
     ts_length, n_zeroes, ratio = chosen["Quality Length"], chosen["Quality Zeroes"], chosen["Quality Ratio"]
     ax_title_params["color"] = NO_ONSET_COLOR
-    resolution = int(p.resample_freqs[-1].total_seconds()/60)
-    _panel_title(ax, f"{mevlbl} {particle}/{sensor} ({p.fallback_viewing} viewing, {resolution} mins resolution)"
-                 + _corrected(chosen), ax_title_params["color"])
+    _panel_title(ax, f"{mevlbl} {particle}/{sensor}{_corrected(chosen)}", ax_title_params["color"])
     flux = tool.dfs_flux[particle][sensor][p.resample_freqs[-1]].loc[event_no, (p.fallback_viewing, mevlbl)]
     ax.plot(flux.index, flux.values, label="flux", **LINE_STYLES["data_no_onset"])
     bot_lim, top_lim = ax.get_ylim()
-    ax.fill_between([bg_start, bg_end], bot_lim, top_lim, color="green", alpha=0.3, label="background sample",
-                    zorder=AREAS_ZORDER)
-    ax.fill_between([bg_end, calc_end], bot_lim, top_lim, color="black", alpha=0.1, label="Event range", zorder=AREAS_ZORDER)
-    drawn.update({"data_no_onset", "bg_sample", "event_range"})
-    ratio_txt = f"ratio={f'{ratio:.2f}' if not pd.isna(ratio) else 'N/A'}"
-    n_zeroes_txt = f"#zeroes={n_zeroes if not pd.isna(n_zeroes) else 'N/A'}"
-    n_non_zeroes_txt = f"#non-zeroes={ts_length-n_zeroes if not pd.isna(ts_length) and not pd.isna(n_zeroes) else 'N/A'}"
-    qties_txt = f"{ratio_txt}, {n_zeroes_txt}, {n_non_zeroes_txt}"
-    _corner_text(ax, qties_txt, top=False)
+    ax.fill_between([bg_start, bg_end], bot_lim, top_lim, label="background window", zorder=AREAS_ZORDER,
+                    **BG_WINDOW_STYLE)
+    ax.fill_between([bg_end, calc_end], bot_lim, top_lim, label="analysis range", zorder=AREAS_ZORDER,
+                    **ANALYSIS_RANGE_STYLE)
+    drawn.update({"bg_window", "analysis_range"})
+    _panel_legend(ax, [(Line2D([0], [0], **LINE_STYLES["data_no_onset"]),
+                        f"no onset ({p.fallback_viewing}, {minutes_text(p.resample_freqs[-1])})")])
+    _corner_text(ax, quality_text(ts_length, n_zeroes, ratio), top=False, left=True, bbox=LABEL_BOX)
     ax.set_ylim([bot_lim, top_lim])
 
 
@@ -169,8 +243,8 @@ def _axis_limits(v: SimpleNamespace) -> tuple[float, float]:
 def _draw_data(ax, v: SimpleNamespace, bot_lim: float, top_lim: float, params, drawn: set) -> None:
     """Draws the event range, the flux, the background, the onset, the peak flux, the thresholds, the fluence and
     the shocks"""
-    ax.fill_between([v.onset_time, v.calc_end], bot_lim, top_lim, color="black", alpha=0.1, label="Event range",
-                    zorder=AREAS_ZORDER)
+    ax.fill_between([v.onset_time, v.calc_end], bot_lim, top_lim, label="analysis range", zorder=AREAS_ZORDER,
+                    **ANALYSIS_RANGE_STYLE)
     ax.plot(v.flux.index, v.flux.values, label="flux", **LINE_STYLES["data"])
     if v.flux2 is not None:
         ax.plot(v.flux2.index, v.flux2.values, label="flux", **LINE_STYLES["data_peak"])
@@ -178,11 +252,11 @@ def _draw_data(ax, v: SimpleNamespace, bot_lim: float, top_lim: float, params, d
     if v.flux3 is not None:
         ax.plot(v.flux3.index, v.flux3.values, label="flux", **LINE_STYLES["data_fluence"])
         drawn.add("data_fluence")
-    ax.fill_between([v.bg_start, v.bg_end], bot_lim, top_lim, color="green", alpha=0.3, label="background sample",
-                    zorder=AREAS_ZORDER)
+    ax.fill_between([v.bg_start, v.bg_end], bot_lim, top_lim, label="background window", zorder=AREAS_ZORDER,
+                    **BG_WINDOW_STYLE)
     ax.axhline(y=v.bg_level, label="background level", **LINE_STYLES["bg_level"])
     ax.axvline(x=v.onset_time, label=f"onset time ({v.onset_time.strftime('%Y-%m-%d %H:%M')})", **LINE_STYLES["onset"])
-    drawn.update({"event_range", "data", "bg_sample", "bg_level", "onset", "threshold"})
+    drawn.update({"analysis_range", "data", "bg_window", "bg_level", "onset", "threshold"})
     if not pd.isna(v.peak_time):
         drawn.update({"peak_flux", "peak_fraction"})
         ax.scatter(v.peak_time, v.peak_flux, color="red", zorder=5,
@@ -194,43 +268,35 @@ def _draw_data(ax, v: SimpleNamespace, bot_lim: float, top_lim: float, params, d
         drawn.add("fluence_threshold")
     ax.axhline(y=v.threshold, label=f"{params.onset_sigma:g}\u03C3 threshold", **LINE_STYLES["threshold"])
     if not pd.isna(v.fluence_start) and not pd.isna(v.fluence_end):
-        ax.fill_between([v.fluence_start, v.fluence_end], bot_lim, top_lim, color="brown", alpha=0.2, zorder=AREAS_ZORDER,
-                        label=f"fluence ({v.fluence:.2E})")
-        drawn.add("fluence")
+        ax.fill_between([v.fluence_start, v.fluence_end], bot_lim, top_lim, label=f"fluence ({v.fluence:.2E})",
+                        zorder=AREAS_ZORDER, **FLUENCE_STYLE)
     for shocktime in v.shocktimes:
         ax.axvline(x=shocktime, label=f"shock time ({shocktime.strftime('%Y-%m-%d %H:%M')})", **LINE_STYLES["shock"])
         drawn.add("shock")
 
 
-def _draw_labels(ax, v: SimpleNamespace, bot_lim: float, top_lim: float, reference_channel: dict | None) -> None:
-    """Writes the labels of the peak flux, the onset (with its notes), the fluence, the data quality and the shocks"""
-    if v.has_peak:
-        ax.text(v.peak_time + timedelta(minutes=15),
-                v.peak_flux,
-                f"{v.peak_flux:.2E}/{v.peak_time.strftime('%H:%M')}/{v.viewing_pf}/"
-                f"{int(v.resample_pf.total_seconds()/60)} mins",
-                color="red")
-    onset_notes = []
+def _draw_labels(ax, v: SimpleNamespace, bot_lim: float, reference_channel: dict | None) -> None:
+    """Writes the legend of the onset (with its notes), the peak flux and the fluence in the bottom-right corner, the data
+    quality in the bottom-left corner, and the times of the shocks"""
+    notes = [v.viewing_ot, minutes_text(v.resample_ot)]
     if v.onset_copied:
-        onset_notes.append(f"from {reference_channel['mev']} {reference_channel['particle']}")
+        notes.append(f"from {reference_channel['mev']} {reference_channel['particle']}")
     if v.onset_at_bg_end:
-        onset_notes.append("at BG end")
-    ax.text(v.onset_time + timedelta(minutes=15),
-            bot_lim * 10,
-            f"{v.onset_time.strftime('%Y-%m-%d %H:%M')}" + (f" ({', '.join(onset_notes)})" if onset_notes else ""),
-            color="green")
+        notes.append("at BG end")
+    entries = [(Line2D([0], [0], **LINE_STYLES["onset"]), f"onset {v.onset_time:%H:%M} ({', '.join(notes)})")]
+    if v.has_peak:
+        entries.append((Line2D([0], [0], **PEAK_MARKER), f"peak {number_text(v.peak_flux)} at {v.peak_time:%H:%M} "
+                        f"({v.viewing_pf}, {minutes_text(v.resample_pf)})"))
     if v.has_fluence:
-        ax.text(v.fluence_start + abs(v.fluence_end - v.fluence_start)/2,
-                top_lim / 5,
-                f"{v.fluence:.2E}/{v.viewing_flu}/{int(v.resample_flu.total_seconds()/60)} mins",
-                color="brown",
-                horizontalalignment="center")
-    _corner_text(ax, f"ratio={v.ratio:.2f}, #zeroes={v.n_zeroes}, #non-zeroes={v.ts_length-v.n_zeroes}", top=False)
+        entries.append((Patch(**FLUENCE_STYLE), f"fluence {number_text(v.fluence)} ({v.viewing_flu}, "
+                        f"{minutes_text(v.resample_flu)})"))
+    _panel_legend(ax, entries)
+    _corner_text(ax, quality_text(v.ts_length, v.n_zeroes, v.ratio), top=False, left=True, bbox=LABEL_BOX)
     for shocktime in v.shocktimes:
         ax.text(shocktime + timedelta(minutes=15),
                 bot_lim * 10,
                 f"{shocktime.strftime('%H:%M')}",
-                color=LINE_STYLES["shock"]["color"])
+                color=LINE_STYLES["shock"]["color"], bbox=LABEL_BOX)
 
 
 def _plot_channel(ax, tool, event_no: int, particle: str, sensor: str, mevlbl: str, ax_title_params: dict,
@@ -239,15 +305,15 @@ def _plot_channel(ax, tool, event_no: int, particle: str, sensor: str, mevlbl: s
     v = _channel_values(tool, event_no, particle, sensor, mevlbl)
     if v.onset_at_bg_end:
         ax_title_params["color"] = BG_END_COLOR
-    _panel_title(ax, f"{mevlbl} {particle}/{sensor} ({v.viewing_ot} viewing, {int(v.resample_ot.total_seconds()/60)} "
-                 f"mins resolution){v.corrected}", ax_title_params["color"])
+    _panel_title(ax, f"{mevlbl} {particle}/{sensor}{v.corrected}", ax_title_params["color"])
     bot_lim, top_lim = _axis_limits(v)
     _draw_data(ax, v, bot_lim, top_lim, tool.params, drawn)
-    _draw_labels(ax, v, bot_lim, top_lim, tool.reference_channel)
+    _draw_labels(ax, v, bot_lim, tool.reference_channel)
     ax.set_ylim([bot_lim, top_lim])
     ax.set_xlim([v.flux.index[0], v.flux.index[-1]])
 
 
+@_with_font_sizes
 def plot_event(tool, event_no: int, filename: str | None = None) -> Figure:
     """Returns the plot of an event, with one panel per channel group, and saves it to filename if one is given
 
@@ -263,7 +329,6 @@ def plot_event(tool, event_no: int, filename: str | None = None) -> Figure:
                             squeeze=False,
                             layout="constrained")
     axs = axs[:, 0]
-    time_formatter = mdates.ConciseDateFormatter(mdates.AutoDateLocator())
     # the elements drawn in at least one panel, which are shown in the legend
     drawn = set()
     i_ax = 0
@@ -279,40 +344,38 @@ def plot_event(tool, event_no: int, filename: str | None = None) -> Figure:
                     _plot_channel(axs[i_ax], tool, event_no, particle, sensor, mevlbl, ax_title_params, drawn)
                 i_ax += 1
 
-    fig.suptitle(f"Event {event_no}")
-    fig.supylabel(r"Flux (particle/(cm$^2$ s sr MeV))")
+    fig.suptitle(event_title(tool, event_no))
+    fig.supylabel(FLUX_LABEL)
     fig.supxlabel("Time (UTC)")
-    axs[-1].xaxis.set_major_formatter(time_formatter)
-    # one group per quantity: the onset, the peak flux, the fluence, and the event
+    _time_axis(axs[-1])
+    # one group per column: the flux of the onset and the background, the onset threshold and the event, the peak flux,
+    # and the fluence; the onset, the peak flux and the fluence themselves are in the legend of each panel
     groups = [
-        [("data", "Data (Onset)", Line2D([0], [0], **LINE_STYLES["data"])),
-         ("data_no_onset", "Data (No Onset)", Line2D([0], [0], **LINE_STYLES["data_no_onset"])),
-         ("bg_sample", "BG sample", Patch(facecolor="green", alpha=0.3)),
-         ("bg_level", "BG Level", Line2D([0], [0], **LINE_STYLES["bg_level"])),
-         ("threshold", f"{p.onset_sigma:g}σ Threshold", Line2D([0], [0], **LINE_STYLES["threshold"])),
-         ("onset", "Onset Time", Line2D([0], [0], **LINE_STYLES["onset"]))],
-        [("data_peak", "Data (Peak Flux)", Line2D([0], [0], **LINE_STYLES["data_peak"])),
-         ("peak_flux", "Peak Flux", Line2D([0], [0], marker="o", color="white", markerfacecolor="red")),
-         ("peak_fraction", f"{p.fluence_peak_fraction:g} × Peak Flux", Line2D([0], [0], **LINE_STYLES["peak_fraction"]))],
-        [("data_fluence", "Data (Fluence)", Line2D([0], [0], **LINE_STYLES["data_fluence"])),
-         ("fluence", "Fluence", Patch(facecolor="brown", alpha=0.2)),
-         ("fluence_threshold", "Fluence Threshold", Line2D([0], [0], **LINE_STYLES["fluence_threshold"]))],
-        [("event_range", "Event Range", Patch(facecolor="black", alpha=0.1)),
-         ("shock", "Shock Time", Line2D([0], [0], **LINE_STYLES["shock"]))],
+        [("data", "Flux (onset)", Line2D([0], [0], **LINE_STYLES["data"])),
+         ("bg_window", "Background window", Patch(facecolor=BG_WINDOW_STYLE["color"], alpha=BG_WINDOW_STYLE["alpha"])),
+         ("bg_level", "Background level", Line2D([0], [0], **LINE_STYLES["bg_level"]))],
+        [("threshold", f"Onset threshold ({p.onset_sigma:g}σ)", Line2D([0], [0], **LINE_STYLES["threshold"])),
+         ("analysis_range", "Analysis range", Patch(facecolor=ANALYSIS_RANGE_STYLE["color"],
+                                                    alpha=ANALYSIS_RANGE_STYLE["alpha"])),
+         ("shock", "Shock time", Line2D([0], [0], **LINE_STYLES["shock"]))],
+        [("data_peak", "Flux (peak)", Line2D([0], [0], **LINE_STYLES["data_peak"])),
+         ("peak_fraction", f"{p.fluence_peak_fraction:g} × peak flux", Line2D([0], [0], **LINE_STYLES["peak_fraction"]))],
+        [("data_fluence", "Flux (fluence)", Line2D([0], [0], **LINE_STYLES["data_fluence"])),
+         ("fluence_threshold", "Fluence threshold", Line2D([0], [0], **LINE_STYLES["fluence_threshold"]))],
     ]
-    legend = []
-    for group in groups:
-        entries = [(label, handle) for key, label, handle in group if key in drawn]
-        # the legend is filled column by column: each group takes whole columns, empty entries complete the last one
-        legend += entries + [("", Line2D([], [], alpha=0))] * (-len(entries) % LEGEND_ROWS)
+    columns = [entries for group in groups if (entries := [(label, handle) for key, label, handle in group if key in drawn])]
+    # the legend is filled column by column, as many rows as the longest group: empty entries complete the others
+    rows = max(len(entries) for entries in columns)
+    legend = [entry for entries in columns for entry in entries + [("", Line2D([], [], alpha=0))] * (rows - len(entries))]
     # above the first panel, below the title
     axs[0].legend([handle for _, handle in legend], [label for label, _ in legend], loc="lower center",
-                  bbox_to_anchor=(0.5, 1.02), ncol=max(len(legend) // LEGEND_ROWS, 1))
+                  bbox_to_anchor=(0.5, 1.02), ncol=len(columns))
     if filename is not None:
-        fig.savefig(filename)
+        fig.savefig(filename, dpi=p.plot_dpi)
     return fig
 
 
+@_with_font_sizes
 def plot_background(tool, event_no: int, filename: str | None = None) -> Figure:
     """Returns the plot of the background windows of an event, and saves it to filename if one is given: one panel per
     particle and sensor with the flux of all its channel groups, at the finest resolution in the first viewing, and
@@ -335,22 +398,24 @@ def plot_background(tool, event_no: int, filename: str | None = None) -> Figure:
         ax.set_yscale("log")
         ax.grid()
         window = tool.bg_window(event_no, particle, sensor)
-        ax.axvspan(window.start, window.end, color="green", alpha=0.3, label="background window", zorder=AREAS_ZORDER)
+        ax.axvspan(window.start, window.end, label="background window", zorder=AREAS_ZORDER, **BG_WINDOW_STYLE)
         # one legend entry for both lines
         ax.axvline(event["Start Time"], color="black", linestyle=":", label="start and end time")
         ax.axvline(event["End Time"], color="black", linestyle=":", label="_nolegend_")
         ax.set_xlim(flux.index[0], flux.index[-1])
-        own = (f": background {window.start:%Y-%m-%d %H:%M} to {window.end:%Y-%m-%d %H:%M} of "
+        end_format = "%H:%M" if window.start.date() == window.end.date() else "%Y-%m-%d %H:%M"
+        own = (f": background {window.start:%Y-%m-%d %H:%M} to {window.end:{end_format}} of "
                f"{' '.join(filter(None, window[3:]))} ({window.source})") if window.particle else ""
-        _panel_title(ax, f"{particle}/{sensor} ({viewing} viewing, {resample_freq.total_seconds() / 60:g} mins "
-                     f"resolution){own}", "black")
+        _panel_title(ax, f"{particle}/{sensor}{own}", "black")
         # right of the panel, away from the window at the start of the event
-        ax.legend(loc="upper left", bbox_to_anchor=(1.005, 1), fontsize="small")
-    fig.suptitle(f"Event {event_no}: background {event['BG Start']:%Y-%m-%d %H:%M} to {event['BG End']:%Y-%m-%d %H:%M} "
-                 f"({event['BG Window Source']}), end {event['End Time']:%Y-%m-%d %H:%M} ({event['End Time Source']})")
-    fig.supylabel(r"Flux (particle/(cm$^2$ s sr MeV))")
+        ax.legend(loc="upper left", bbox_to_anchor=(1.005, 1))
+    fig.suptitle(f"{event_title(tool, event_no)}, {viewing} viewing, {minutes_text(resample_freq)}\n"
+                 f"Background {event['BG Start']:%Y-%m-%d %H:%M} to "
+                 f"{event['BG End']:%Y-%m-%d %H:%M} ({event['BG Window Source']})\nEnd {event['End Time']:%Y-%m-%d %H:%M} "
+                 f"({event['End Time Source']})")
+    fig.supylabel(FLUX_LABEL)
     fig.supxlabel("Time (UTC)")
-    axs[-1].xaxis.set_major_formatter(mdates.ConciseDateFormatter(mdates.AutoDateLocator()))
+    _time_axis(axs[-1])
     if filename is not None:
-        fig.savefig(filename)
+        fig.savefig(filename, dpi=p.plot_dpi)
     return fig

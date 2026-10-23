@@ -166,3 +166,20 @@ def test_onset_windows_are_removed(name, replacement):
 def test_default_background_in_order():
     with pytest.raises(ValueError, match="bg_start_after_start .* must be before bg_end_after_start"):
         SEPPACT_parameters(bg_start_after_start=timedelta(hours=2), bg_end_after_start=timedelta(hours=1))
+
+
+@pytest.mark.parametrize("value", [71, 601, 200.0, "200", True])
+def test_plot_dpi_out_of_range(value):
+    p = SEPPACT_parameters()
+    with pytest.raises(ValueError, match="plot_dpi must be a whole number of dots per inch from 72 to 600, not .*; 300 for "
+                                         "print, 150 to 200 for screens"):
+        p.plot_dpi = value
+
+
+@pytest.mark.parametrize("value", [72, 200, 300, 600])
+def test_plot_dpi_in_range(value):
+    assert SEPPACT_parameters(plot_dpi=value).plot_dpi == value
+
+
+def test_plot_dpi_default_for_screens():
+    assert SEPPACT_parameters().plot_dpi == 200

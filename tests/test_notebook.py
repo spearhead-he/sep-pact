@@ -651,12 +651,12 @@ def test_fields_are_wide_enough(tmp_path, monkeypatch, shown):
 def test_panel_height(tmp_path, monkeypatch):
     tool = make_tool(tmp_path, monkeypatch)
     note = tool._wgt_height_note
-    # 5 channel groups of 2.5 inches, and 1.5 inches for the title, legend and axis labels
-    assert "Recommended: 2 to 4 inches. With 5 channel groups, the plots are 15 inches wide and 14 inches high" in note.value
+    # 5 channel groups of 2.5 inches, and 2 inches for the title, legend and axis labels
+    assert "Recommended: 2 to 4 inches. With 5 channel groups, the plots are 10 inches wide and 14.5 inches high" in note.value
     assert "darkorange" not in note.value
     tool.widgets["panel_height"].value = 1.5
     assert tool.parameters.panel_height == 1.5
-    assert "9 inches high" in note.value and "Below the recommended height, the labels in a panel overlap" in note.value
+    assert "9.5 inches high" in note.value and "Below the recommended height, the labels in a panel overlap" in note.value
     tool.widgets["panel_height"].value = 5
     assert "Above the recommended height" in note.value and tool.errors == {}
     tool.widgets["panel_height"].value = 0.5
@@ -666,7 +666,24 @@ def test_panel_height(tmp_path, monkeypatch):
     tool.widgets["panel_height"].value = 3
     remove = tool.widgets["group_options"].children[4].children[1].children[2]
     remove.click()
-    assert "With 4 channel groups, the plots are 15 inches wide and 13.5 inches high" in note.value
+    assert "With 4 channel groups, the plots are 10 inches wide and 14 inches high" in note.value
+
+
+def test_plot_dpi(tmp_path, monkeypatch):
+    tool = make_tool(tmp_path, monkeypatch)
+    note = tool._wgt_dpi_note
+    # 5 channel groups of 2.5 inches: 10 × 14.5 inches
+    assert note.value == ("<i>300 dpi for papers and posters: the resolution expected in print. 150 to 200 dpi for screens "
+                          "and slides: just as sharp there, with files about a third smaller at 200 dpi. At 200 dpi, the "
+                          "plots of 5 channel groups are 2000 × 2900 pixels.</i>")
+    tool.widgets["plot_dpi"].value = 300
+    assert tool.parameters.plot_dpi == 300
+    assert "At 300 dpi, the plots of 5 channel groups are 3000 × 4350 pixels." in note.value
+    # the size follows the panel height
+    tool.widgets["panel_height"].value = 3
+    assert "3000 × 5100 pixels" in note.value
+    tool.widgets["plot_dpi"].value = 1000
+    assert tool.parameters.plot_dpi == 300 and "plot_dpi" in tool.errors
 
 
 def test_date_ranges(tmp_path, monkeypatch, shown):
