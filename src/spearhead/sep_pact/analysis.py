@@ -8,7 +8,7 @@ import pandas as pd
 
 from .background import BGWindow, key_label, window_points
 from .conf import SEPPACT_parameters
-from .data import channel_layout, download_data, load_energies, resample_flux
+from .data import channel_layout, download_data, load_event_energies, resample_flux
 from .inputs import CORRECTION_COLUMNS, count, load_events, load_shocks, read_corrections, shock_warnings
 
 
@@ -507,10 +507,9 @@ class SEPPACT:
     def _load_energies(self) -> dict:
         """Returns the channel energies, read from the data of the first event that has them"""
         p = self.params
-        for _, row in self.events.iterrows():
+        for event_no, row in self.events.iterrows():
             try:
-                return load_energies(self.sensors_all, p.level, row["Plot Start"], row["Plot End"], p.viewings[0],
-                                     p.dir_data)
+                return load_event_energies(event_no, row, self.sensors_all, p.level, p.viewings[0], p.dir_data)
             except ValueError as error:
                 last_error = error
         raise last_error

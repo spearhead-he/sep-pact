@@ -1,6 +1,7 @@
 """Tests of the data: channel layout, grouping of the channels, the download with the events left out and the cache,
 and the resampling"""
 import os
+import sys
 from datetime import timedelta
 
 import numpy as np
@@ -12,7 +13,8 @@ from spearhead.sep_pact.conf import default_group_options
 from spearhead.sep_pact.data import (CACHE_FILE, ParticleData, channel_layout, download_data, event_cache_key,
                                      group_channels_de, load, load_energies, resample_flux)
 from spearhead.sep_pact.inputs import read_events
-from tests.helpers import OFFSET, T0, FailingEPD, FakeEPD, epd_energies, make_params, profile, write_events
+from tests.helpers import (DOWNLOAD_BAR_OUTPUT, OFFSET, T0, DownloadingEPD, FailingEPD, FakeEPD, epd_energies,
+                           make_params, profile, write_events)
 
 
 @pytest.fixture
@@ -260,15 +262,6 @@ def test_resample_flux(events, tmp_path, monkeypatch):
     assert two.index[1] - two.index[0] == timedelta(minutes=2)
 
 
-class DownloadingEPD(FakeEPD):
-    """FakeEPD that writes a file into the data folder at each call, as a download does"""
-
-    def __call__(self, sensor, level, startdate, enddate, viewing, path, autodownload) -> tuple:
-        os.makedirs(path, exist_ok=True)
-        open(os.path.join(path, f"file_{len(self.calls)}.cdf"), "w").close()
-        return super().__call__(sensor, level, startdate, enddate, viewing, path, autodownload)
-
-
 def test_download_messages(events, tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(data, "epd_load", DownloadingEPD())
     folder = str(tmp_path / "data")
@@ -299,3 +292,30 @@ def test_download_message_of_a_retry(events, tmp_path, monkeypatch, capsys):
     download_data(events, "l2", ["sun"], default_group_options(), energy_tables(), str(tmp_path / "data"),
                   str(tmp_path), 2)
     assert "No HET l2 sun data from" in capsys.readouterr().out
+
+
+def test_without_download_bars_keeps_the_other_messages(capsys):
+    with data.without_download_bars():
+        sys.stderr.write(DOWNLOAD_BAR_OUTPUT)
+        sys.stderr.write("a warning\n")
+        print("on stdout")
+    out, err = capsys.readouterr()
+    assert out == "on stdout\n" and err == "a warning\n"
+
+
+def test_without_download_bars_after_an_error(capsys):
+    with pytest.raises(ValueError, match="No data"):
+        with data.without_download_bars():
+            sys.stderr.write(DOWNLOAD_BAR_OUTPUT + "a warning before the error\n")
+            raise ValueError("No data")
+    assert capsys.readouterr().err == "a warning before the error\n"
+
+
+def test_download_data_without_the_download_bars(events, tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(data, "epd_load", DownloadingEPD())
+    download_data(events, "l2", ["sun", "north"], default_group_options(), energy_tables(), str(tmp_path / "data"),
+                  str(tmp_path), 2)
+    out, err = capsys.readouterr()
+    # one line per event, with the number of files downloaded, and the warnings of the loader
+    assert "Event 1... loaded, 2 files downloaded (100.00%)" in out
+    assert "B/s]" not in out + err and "UserWarning: a warning of the loader" in err

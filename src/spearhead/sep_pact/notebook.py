@@ -19,7 +19,7 @@ from .analysis import SEPPACT
 from .background import KEY_COLUMNS
 from .conf import SEPPACT_parameters
 from .csv_files import SEPARATORS, csv_separator
-from .data import CACHE_FILE, SAVE_EVERY, load_energies
+from .data import CACHE_FILE, SAVE_EVERY, load_event_energies
 from .inputs import (EVENT_LIST_LAYOUTS, count, event_list_layout, make_events, read_corrections, read_events,
                      shock_warnings)
 from .shocks import SHOCK_FILE_FORMATS, SHOCK_SOURCES, combine_shocks, download_shocks, read_shock_file
@@ -548,11 +548,11 @@ class SEPPACT_notebook:
     def _read_energies(self) -> str:
         """Reads the energies of the HET channels from the data of the first event; returns the error, if any"""
         self._energies = None
+        p = self.parameters
         try:
-            events = make_events(self.parameters)
-            self._energies = load_energies({"HET"}, self.parameters.level, events.iloc[0]["Plot Start"],
-                                           events.iloc[0]["Plot End"], self.parameters.viewings[0],
-                                           self.parameters.dir_data)["HET"]
+            events = make_events(p)
+            self._energies = load_event_energies(events.index[0], events.iloc[0], {"HET"}, p.level, p.viewings[0],
+                                                 p.dir_data)["HET"]
         except Exception as e:
             if _is_connection_error(e):
                 advice = "the data server may be unavailable, read the channels again later."

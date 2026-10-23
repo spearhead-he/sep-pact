@@ -10,7 +10,8 @@ from ipywidgets import widgets
 import spearhead.sep_pact.data as data
 import spearhead.sep_pact.notebook as notebook
 from spearhead.sep_pact.notebook import SEPPACT_notebook
-from tests.helpers import T0, VIEWINGS, FailingEPD, FakeEPD, bg_end_event, make_params, write_events, write_shocks
+from tests.helpers import (T0, VIEWINGS, DownloadingEPD, FailingEPD, FakeEPD, bg_end_event, make_params, write_events,
+                           write_shocks)
 
 
 @pytest.fixture
@@ -35,6 +36,16 @@ def make_tool(tmp_path, monkeypatch, fake=None, events=None, **parameters) -> SE
     tool = SEPPACT_notebook(params)
     tool.form = tool.parameters_form()
     return tool
+
+
+def test_form_reads_the_channel_energies_in_one_line(tmp_path, monkeypatch, capsys):
+    make_tool(tmp_path, monkeypatch)
+    assert capsys.readouterr().out == ("Reading the energies of the HET channels from the data of event 1 (2021-01-01 to "
+                                       "2021-01-03)... done.\n")
+    (tmp_path / "downloads").mkdir()
+    make_tool(tmp_path / "downloads", monkeypatch, fake=DownloadingEPD())
+    out, err = capsys.readouterr()
+    assert out.endswith("... done, 1 file downloaded.\n") and "B/s]" not in out + err
 
 
 def test_form_tabs_and_defaults(tmp_path, monkeypatch):

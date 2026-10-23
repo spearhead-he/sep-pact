@@ -119,7 +119,10 @@ def test_run_data_leaves_out_the_events_without_data(tmp_path, monkeypatch, caps
     fake = FailingEPD([T0 + timedelta(days=10)], rises)
     tool = synthetic_tool(tmp_path, monkeypatch, events=two_events(), fake=fake)
     assert list(tool.skipped_events) == [2] and list(tool.events.index) == [1]
-    assert "1 event left out, as its data could not be loaded: 2 (No data found from" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "1 event left out, as its data could not be loaded: 2 (No data found from" in out
+    # the energies are read from the first event with data
+    assert "Reading the energies of the HET channels from the data of event 1 (2021-01-01 to 2021-01-03)... done." in out
     for step in (tool.run_onsets, tool.run_spikes, tool.run_peaks, tool.run_fluences):
         step()
     assert tool.results_table()["Event No"].unique().tolist() == [1]
@@ -169,3 +172,11 @@ def test_results_table_has_the_same_type_for_one_or_more_events(tmp_path, monkey
     assert tool.dfs_flux["electrons"]["HET"][timedelta(minutes=2)].dtypes.iloc[0] == "float32"
     for column in ("Peak Flux", "Fluence", "Fluence Threshold"):
         assert tool.results_table()[column].dtype == "float64"
+
+
+def test_run_data_reads_the_energies_from_the_next_event_with_data(tmp_path, monkeypatch, capsys):
+    rises = {(particle, viewing): T0 for particle in ("electrons", "protons") for viewing in VIEWINGS}
+    synthetic_tool(tmp_path, monkeypatch, events=two_events(), fake=FailingEPD([T0], rises))
+    out = capsys.readouterr().out
+    assert "Reading the energies of the HET channels from the data of event 1 (2021-01-01 to 2021-01-03)... failed.\n" in out
+    assert "from the data of event 2 (2021-01-11 to 2021-01-13)... done.\n" in out

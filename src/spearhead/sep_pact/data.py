@@ -6,7 +6,11 @@ numbers as columns and the energies of the channels.
 import hashlib
 import json
 import os
+import re
+import sys
+from contextlib import contextmanager, redirect_stderr
 from datetime import datetime, timedelta
+from io import StringIO
 from os.path import exists as pexists
 from os.path import join as pjoin
 from typing import NamedTuple
@@ -15,6 +19,25 @@ import pandas as pd
 from solo_epd_loader import epd_load
 
 from .inputs import count
+
+# a progress bar of tqdm, e.g. "file.cdf:  37%|███▋      | 557k/1.52M [00:00<00:00, 1.06MB/s]"
+DOWNLOAD_BAR = re.compile(r"\[[\d:]+(<[\d:?]+)?, [^\]]*/s\]")
+
+
+@contextmanager
+def without_download_bars():
+    """Hides the progress bars of the downloads of solo-epd-loader, one per file, which tqdm writes to stderr; the other
+    messages written to stderr meanwhile, e.g. warnings, are written after"""
+    captured = StringIO()
+    try:
+        with redirect_stderr(captured):
+            yield
+    finally:
+        # tqdm redraws a bar on the same line with carriage returns
+        lines = captured.getvalue().replace("\r", "\n").split("\n")
+        if other := [line for line in lines if line.strip() and not DOWNLOAD_BAR.search(line)]:
+            print("\n".join(other), file=sys.stderr)
+
 
 # prefix of the flux columns of each particle in the EPD data; the protons of EPT are "Ion"
 PARTICLE_PREFIX = {
@@ -41,13 +64,17 @@ def load(sensor: str,
 
     Raises ValueError if there are no data for the period.
     """
-    df_protons, df_electrons, energies = epd_load(sensor=sensor,
-                                                  level=level,
-                                                  startdate=startdate,
-                                                  enddate=enddate,
-                                                  viewing=viewing,
-                                                  path=path,
-                                                  autodownload=True)
+    # the folder of the files of the loader, made here, or the loader announces it in the middle of the line of the
+    # loading
+    os.makedirs(pjoin(path, level.lower(), "epd", sensor.lower()), exist_ok=True)
+    with without_download_bars():
+        df_protons, df_electrons, energies = epd_load(sensor=sensor,
+                                                      level=level,
+                                                      startdate=startdate,
+                                                      enddate=enddate,
+                                                      viewing=viewing,
+                                                      path=path,
+                                                      autodownload=True)
     data = {}
     for particle, df_particle in (("protons", df_protons), ("electrons", df_electrons)):
         if particles is not None and particle not in particles:
@@ -105,6 +132,22 @@ def load_energies(sensors: set,
     return {sensor: {particle: particle_data.energies
                      for particle, particle_data in load(sensor, startdate, enddate, viewing, path, level=level).items()}
             for sensor in sensors}
+
+
+def load_event_energies(event_no: int, row: pd.Series, sensors: set, level: str, viewing: str, path: str) -> dict:
+    """Returns load_energies() for the data period of an event (Plot Start to Plot End), and prints one line on it: the
+    event, then "done" with the number of files downloaded, or "failed" (the error is raised)"""
+    print(f"Reading the energies of the {'/'.join(sorted(sensors))} channels from the data of event {event_no} "
+          f"({row['Plot Start']:%Y-%m-%d} to {row['Plot End']:%Y-%m-%d})...", end=" ")
+    files_before = count_files(path)
+    try:
+        energies = load_energies(sensors, level, row["Plot Start"], row["Plot End"], viewing, path)
+    except Exception:
+        print("failed.")
+        raise
+    downloaded = count_files(path) - files_before
+    print(f"done, {count(downloaded, 'file')} downloaded." if downloaded else "done.")
+    return energies
 
 
 def group_channels_de(df_to_group: pd.DataFrame,
@@ -203,7 +246,7 @@ def _add_flux(frames: pd.DataFrame, new: pd.DataFrame) -> pd.DataFrame:
     return frames.groupby(level=[0, 1]).sum(min_count=1).sort_index()
 
 
-def _count_files(path: str) -> int:
+def count_files(path: str) -> int:
     """Returns the number of files in the folder and its subfolders (0 if it does not exist)"""
     return sum(len(files) for _, _, files in os.walk(path))
 
@@ -263,14 +306,14 @@ def download_data(events: pd.DataFrame,
                 print(f"Event {event_no}... loaded from the cache {progress}")
                 continue
             print(f"Event {event_no}", end="... ")
-            files_before = _count_files(path)
+            files_before = count_files(path)
             try:
                 loaded[event_no] = _load_event(event_no, row, level, viewings, group_options, energies, path, tries_max)
             except Exception as error:
                 skipped[event_no] = error
                 print(f"left out: {error} {progress}")
                 continue
-            downloaded = _count_files(path) - files_before
+            downloaded = count_files(path) - files_before
             print(f"loaded{f', {downloaded} files downloaded' if downloaded else ''} {progress}")
             if cache:
                 entries[key] = loaded[event_no]
