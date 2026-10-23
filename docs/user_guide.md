@@ -1,6 +1,7 @@
 # SEP-PACT user guide
 
 - [Overview](#overview)
+- [Method](#method)
 - [Parameters](#parameters)
   - [Events tab](#events-tab)
   - [Data tab](#data-tab)
@@ -33,6 +34,20 @@
 SEP-PACT analyses the events of an event list with the data of Solar Orbiter EPD/HET (level 2). For each event and energy channel group, it calculates the onset time, the peak flux and the fluence at every resolution and viewing, and chooses one result of each.
 
 The notebook `sep-pact.ipynb` runs the whole analysis. Set the parameters in its form, then run the cells in order. The results are written to `outputs/results.csv`, and the plots to `plots/`.
+
+## Method
+
+A summary of the analysis; the steps below describe each part in detail.
+
+- **Data:** the level 2 data of the High Energy Telescope (HET) of the Energetic Particle Detector (EPD) of Solar Orbiter ([Rodríguez-Pacheco et al., 2020](https://doi.org/10.1051/0004-6361/201935287)), electrons and protons, in the viewings of the analysis (sun, asun, north, south). The flux of a channel group is the mean of the flux of its channels, weighted by their energy widths (see [Energy channels tab](#energy-channels-tab)).
+- **Resolutions:** the flux is averaged over intervals of each resolution of the analysis. The time of an averaged point is the start of its interval: a point at 01:30 at the 30 min resolution covers 01:30 to 02:00, and so does an onset at that time.
+- **Onset:** for each resolution and viewing, the background level and standard deviation in the background window give a threshold, the level plus `onset_sigma` standard deviations. After the background window, the onset is the first of `onset_points` consecutive points above the threshold, moved back to earlier points as long as each one is lower than the next, but never before the end of the background window (see [Onset](#onset-step)). A channel group of another particle than the reference channel (by default a proton group) without an onset at a resolution and viewing takes the onset of the reference channel there.
+- **Data quality:** a resolution and viewing is used only if its data from the onset to the end have few transitions to zero or missing values (`quality_tolerance`) and more valid values than zero or missing ones.
+- **Choice of the onset:** the earliest of the viewings at the finest usable resolution, within `reference_onset_window` of the onset of the reference channel.
+- **Spikes:** points that differ from both neighbours by more than `spike_thresholds` orders of magnitude are replaced by the mean of their neighbours (see [Spikes](#spikes-step)).
+- **Peak flux:** the maximum of the flux without the spikes, from the onset to the end (or the first half of it, see `peak_window_min`); the highest of the viewings at the resolution of the onset (see [Peak flux](#peak-flux-step)).
+- **Fluence:** the integral of the flux over the interval around the peak where it stays above `fluence_peak_fraction` of the peak flux, following [Jiggens et al. (2018)](https://doi.org/10.1051/swsc/2018010); the largest of the resolutions, in the viewing of the peak flux (see [Fluence](#fluence-step)).
+- **Shocks:** the analysis of a channel group ends at the first interplanetary shock after its onset (see [Shocks](#shocks)).
 
 ## Parameters
 
@@ -310,7 +325,7 @@ The peak flux is the maximum of the flux in the same window as the spikes, witho
 <a id="fluence-step"></a>
 ### Fluence
 
-For each resolution, in the viewing of the chosen peak flux, from the chosen onset to the end:
+The fluence follows [Jiggens et al. (2018)](https://doi.org/10.1051/swsc/2018010). For each resolution, in the viewing of the chosen peak flux, from the chosen onset to the end:
 1. The peak is the point next to the time of the chosen peak flux (the higher of the points just before and after it). The threshold is `fluence_peak_fraction` of its flux.
 2. The interval starts at the last of `fluence_points` consecutive points at or below the threshold before the peak (or at a single such point, if there are none), and not before the onset.
 3. It ends at the first of `fluence_points` consecutive points at or below the threshold after the peak (or at a single such point), or at the end of the window.
