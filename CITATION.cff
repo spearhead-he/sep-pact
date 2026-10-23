@@ -17,7 +17,7 @@ authors:
   family-names: Papaioannou
   affiliation: National Observatory of Athens
   orcid: https://orcid.org/0000-0002-9479-8644
-version: 0.3.0
-date-released: 2026-10-21
+version: 1.0.0
+date-released: 2026-10-23
 repository-code: https://github.com/spearhead-he/sep-pact
 license: BSD-3-Clause

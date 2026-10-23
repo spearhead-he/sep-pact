@@ -4,6 +4,8 @@ All notable changes of SEP-PACT. The format is based on [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-23
+
 ### Added
 
 - Background windows of particles and sensors: an event list can have rows with the optional columns `Particle` and `Sensor`, whose `BG Start` and `BG End` are the background window of the channel groups of that particle (and sensor) in the event, instead of the window of the event. In the event times step, the new Window of dropdown sets them; in scripts, `set_bg_window()` and `reset_bg_window()` take a particle and sensor, and `bg_window()` gives the window of a series. See [Background windows of particles and sensors](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_guide.md#bg-windows-of-particles).
@@ -41,6 +43,10 @@ All notable changes of SEP-PACT. The format is based on [Keep a Changelog](https
 
 - The results change where the shocks of SODA differ from those of the former shock list: on a list of 212 Solar Orbiter events, 73 of the 1060 rows of `results.csv`, in 31 events, have another onset (from the data quality check up to the shock), peak flux or fluence. To keep the former shocks, set the shock list online to None and give the former `shocks.dat` as the shock list file.
 - The tool needs an internet connection for the shock list online, as for the data.
+- `results.csv` is written with 7 significant digits and with the resolutions in whole minutes; the values are the same. A channel group without an onset has `Onset Copied` and `Onset at BG End` set to `False` instead of empty. Scripts that read `results.csv` with pandas need no change.
+- The plots are 10 inches wide, with a new layout, and are saved at `plot_dpi`, 200 dpi by default; set it to 300 for print.
+- Event lists and onset corrections saved with 0.3.0 can be given to 1.0.0 as they are.
+- SEP-PACT can now be installed from PyPI: `pip install "spearhead-sep-pact[notebook]"`, then `spearhead-sep-pact-notebooks` downloads the notebook and its example files.
 - The cache is off by default: for lists of many events, turn on `cache_data` (Data tab, Advanced). The former cache files in `intermediate_states/` (`dfs_flux_*.pkl`) are not used and can be deleted; the first run with the cache loads the events again from the data files.
 
 ## [0.3.0] - 2026-10-21
@@ -106,7 +112,8 @@ All notable changes of SEP-PACT. The format is based on [Keep a Changelog](https
 
 First release: onset time, peak flux and fluence of electrons and protons in Solar Orbiter EPD/HET data, at several resolutions and viewings, with one plot per event.
 
-[Unreleased]: https://github.com/spearhead-he/sep-pact/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/spearhead-he/sep-pact/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/spearhead-he/sep-pact/compare/v0.3.0...v1.0.0
 [0.3.0]: https://github.com/spearhead-he/sep-pact/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/spearhead-he/sep-pact/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/spearhead-he/sep-pact/releases/tag/v0.1.0
