@@ -117,7 +117,8 @@ The fluence is the integral of the flux over an interval around the peak: from w
 | Field | Parameter | Default | Description |
 |---|---|---|---|
 | Viewing of channel groups without an onset | `fallback_viewing` | sun | Viewing shown, at the coarsest resolution, for a channel group without an onset |
-| Height of the panel of each channel group (inches) | `panel_height` | 2.5 | From 1 to 10 inches. The plots are 15 inches wide, and as high as the panels plus 1.5 inches for the title, legend and axis labels; the note below the field gives the size of the plots with the channel groups of the form. 2 to 4 inches is recommended: below 2 the labels in a panel overlap, and above 4 the plots of several channel groups are hard to view on a screen |
+| Height of the panel of each channel group (inches) | `panel_height` | 2.5 | From 1 to 10 inches. The plots are 10 inches wide, and as high as the panels plus 2 inches for the title, legend and axis labels; the note below the field gives the size of the plots with the channel groups of the form. 2 to 4 inches is recommended: below 2 the labels in a panel overlap, and above 4 the plots of several channel groups are hard to view on a screen |
+| Resolution of the saved plots (dpi) | `plot_dpi` | 200 | From 72 to 600 dots per inch. 300 dpi for papers and posters, the resolution expected in print; 150 to 200 dpi for screens and slides, just as sharp there, with files about a third smaller at 200 dpi (about 0.8 MB instead of 1.3 MB for 5 channel groups). The note below the field gives the size of the plots in pixels |
 | Save the plots of the events | | on | Whether the results step also writes the plots (see [Results](#results)) |
 | Plots folder | `dir_plots` | `plots` | Folder of the plots, one per event |
 | Results folder | `dir_outputs` | `outputs` | Folder of `results.csv` |
@@ -387,28 +388,38 @@ wide = results.set_index(["Event No", "Particle", "Sensor", "Energy Label"]).uns
 
 ## Plots
 
-Each plot, `event_<number>.png`, has the title of the event, the legend, and one panel per channel group, `panel_height` inches high. The legend lists only the elements drawn in at least one panel, e.g. Shock Time only when a shock is in the plot, grouped by quantity: the onset, the peak flux, the fluence, and the event. The title of a panel, in its top-right corner, gives the group, the particle and sensor, and the viewing and resolution of the onset. Each panel shows:
+Each plot, `event_<number>.png`, has the title of the event (its number and start date, and the spacecraft and instrument, e.g. "Event 20 (2021-10-31) | Solar Orbiter EPD", as in the VDA tool), the legend, and one panel per channel group, `panel_height` inches high. The legend lists only the elements drawn in at least one panel, e.g. Shock time only when a shock is in the plot, in one column per group: the flux of the onset and the background, the onset threshold and the event, the peak flux, and the fluence.
+
+Each panel has:
+- in its top-right corner, its title: the channel group, the particle and the sensor, e.g. "1 MeV electrons/HET";
+- in its bottom-right corner, the legend of its results, from the top: the onset with its viewing and resolution, e.g. "onset 01:50 (north, 2 min)", the peak flux, e.g. "peak 72.6 at 02:58 (sun, 2 min)", and the fluence, e.g. "fluence 3.13×10⁵ (sun, 30 min)". The onset notes "from 1 MeV electrons" for an onset copied from the reference channel, and "at BG end" for an onset at the end of the background window. A channel group without an onset has "no onset" with the viewing and resolution of its flux;
+- in its bottom-left corner, the data quality of the onset series, e.g. "quality: 44 of 569 points zero or missing, ratio 0.07": its zero or missing points, and the ratio of transitions to them, compared with `quality_tolerance`.
+
+The legends and labels inside the panels have a semi-transparent white background. Each panel shows:
 
 | Element | Legend | Meaning |
 |---|---|---|
-| Orange line | Data (Onset) | Flux at the resolution and viewing of the onset |
-| Light orange line | Data (No Onset) | Flux in `fallback_viewing` at the coarsest resolution, of a channel group without an onset |
-| Green area | BG sample | Background window of the channel group |
-| Blue dashed line | BG Level | Background level |
-| Red dashed line | nσ Threshold | Onset threshold |
-| Green dashed line and label | Onset Time | Onset time; the label notes "from 1 MeV electrons" for an onset copied from the reference channel, and "at BG end" for an onset at the end of the background window |
-| Teal dashed line | Data (Peak Flux) | Flux at the resolution and viewing of the peak flux, if they are different from those of the onset |
-| Red point and label | Peak Flux | Peak flux, with its time, viewing and resolution |
-| Purple dashed line | 0.5 × Peak Flux | `fluence_peak_fraction` of the peak flux |
-| Brown dash-dotted line | Data (Fluence) | Flux at the resolution of the fluence, if it is different from the one of the peak flux |
-| Brown area and label | Fluence | Fluence interval, with the fluence, its viewing and resolution |
-| Purple dotted line | Fluence Threshold | The fluence threshold, at the resolution of the fluence |
-| Grey area | Event Range | Event range, from the onset to the end (or the first shock after the onset) |
-| Pink lines and labels | Shock Time | Interplanetary shocks, with their times |
-| Text in the bottom-right corner | | Quality of the onset data: the ratio of transitions to zero or NaN values, and the numbers of zero and valid values |
+| Orange line | Flux (onset) | Flux at the resolution and viewing of the onset |
+| Light orange line | no onset (in the panel) | Flux in `fallback_viewing` at the coarsest resolution, of a channel group without an onset |
+| Blue-grey area | Background window | Background window of the channel group |
+| Blue dashed line | Background level | Background level |
+| Red dashed line | Onset threshold (nσ) | Onset threshold |
+| Green dashed line | onset (in the panel) | Onset time |
+| Teal dashed line | Flux (peak) | Flux at the resolution and viewing of the peak flux, if they are different from those of the onset |
+| Red point | peak (in the panel) | Peak flux |
+| Purple dashed line | 0.5 × peak flux | `fluence_peak_fraction` of the peak flux |
+| Brown dash-dotted line | Flux (fluence) | Flux at the resolution of the fluence, if it is different from the one of the peak flux |
+| Brown area | fluence (in the panel) | Fluence interval |
+| Purple dotted line | Fluence threshold | The fluence threshold, at the resolution of the fluence |
+| Grey area | Analysis range | Range of the peak flux and the fluence, from the onset to the end time (or the first shock after the onset) |
+| Pink lines and labels | Shock time | Interplanetary shocks, with their times |
+
+The values in the legends have 3 significant digits, in the units of `results.csv` ([Units](#units)), and as a power of ten below 0.01 and from 1000. The background window is blue-grey, so that it can be told apart from the brown fluence interval also with red-green colour blindness.
+
+The plots are made for papers and presentations: 10 inches wide, with fonts from 17 pt (the title) and 16 pt (the axis labels) to 10 pt (the legends inside the panels), so that scaled to the width of a page (about 7 inches) the smallest text is still 7 pt. The files are saved at `plot_dpi`: 200 dpi by default, for screens and slides, or 300 dpi for print (see the [Plots and outputs tab](#plots-and-outputs-tab)).
 
 The colour of a panel title marks a channel group:
-- red, without an onset: the panel then shows the flux in `fallback_viewing` at the coarsest resolution, with the background window and the event range;
+- red, without an onset: the panel then shows the flux in `fallback_viewing` at the coarsest resolution, with the background window and the analysis range (from the end of the background window to the end time);
 - orange, with its onset at the end of the background window, where the event may have started earlier.
 
 "(corrected)" at the end of a panel title marks an onset set by hand (see [Onset corrections](#onset-corrections)).

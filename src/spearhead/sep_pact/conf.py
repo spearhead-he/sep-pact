@@ -136,6 +136,7 @@ class SEPPACT_parameters:
     # Plots
     fallback_viewing: str = "sun"              # viewing shown, at the coarsest resolution, for channels without an onset
     panel_height: float = 2.5                  # height of the panel of each channel group, in inches (1 to 10)
+    plot_dpi: int = 200                        # resolution of the saved plots, in dots per inch (72 to 600)
 
     def __setattr__(self, name: str, value) -> None:
         # catches removed parameters and typos, which would otherwise be silently ignored
@@ -168,6 +169,7 @@ class SEPPACT_parameters:
         "fluence_peak_fraction": "_check_fraction",
         "group_options": "_check_group_options",
         "panel_height": "_check_panel_height",
+        "plot_dpi": "_check_plot_dpi",
     }
 
     @staticmethod
@@ -208,6 +210,17 @@ class SEPPACT_parameters:
         low, high = self.PANEL_HEIGHTS
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not low <= value <= high:
             raise ValueError(f"{name} must be a number of inches from {low} to {high}, not {value!r}.")
+
+    # the resolutions of the saved plots (dots per inch) that are accepted, and those for print and for screens
+    PLOT_DPIS: ClassVar[tuple] = (72, 600)
+    PRINT_DPI: ClassVar[int] = 300
+    SCREEN_DPIS: ClassVar[tuple] = (150, 200)
+
+    def _check_plot_dpi(self, name: str, value) -> None:
+        low, high = self.PLOT_DPIS
+        if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+            raise ValueError(f"{name} must be a whole number of dots per inch from {low} to {high}, not {value!r}; "
+                             f"{self.PRINT_DPI} for print, {self.SCREEN_DPIS[0]} to {self.SCREEN_DPIS[1]} for screens.")
 
     @staticmethod
     def _check_fraction(name: str, value) -> None:

@@ -110,6 +110,7 @@ class SEPPACT_notebook:
         self._energies = None
         # the note on the plot height, which depends on the panel height and the number of channel groups
         self._wgt_height_note = None
+        self._wgt_dpi_note = None
         # the shocks of the shock lists online, downloaded once: {source: times}
         self._online_shocks = {}
         self._style = {"description_width": "initial"}
@@ -711,12 +712,15 @@ class SEPPACT_notebook:
         self.widgets["save_plots"] = wgt_save
         self._wgt_height_note = widgets.HTML()
         field_height = self._number("panel_height", "Height of the panel of each channel group (inches):", 0.5)
-        self.widgets["panel_height"].observe(lambda _: self._update_height_note(), names="value")
+        field_dpi = self._number("plot_dpi", "Resolution of the saved plots (dpi):", 50)
+        for parameter in ("panel_height", "plot_dpi"):
+            self.widgets[parameter].observe(lambda _: self._update_height_note(), names="value")
+        self._wgt_dpi_note = widgets.HTML()
         self._update_height_note()
         return widgets.VBox([
             _section("Plots", self._field(wgt_fallback, "fallback_viewing",
                                           description="Viewing of channel groups without an onset:"),
-                     field_height, self._wgt_height_note, wgt_save),
+                     field_height, self._wgt_height_note, field_dpi, self._wgt_dpi_note, wgt_save),
             _section("Outputs",
                      self._text("dir_plots", "Plots folder:", "Folder of the plots, one per event"),
                      self._text("dir_outputs", "Results folder:", "Folder of results.csv")),
@@ -738,9 +742,22 @@ class SEPPACT_notebook:
             return f"<i>{html.escape(note)}</i>"
         return f'<i>{html.escape(note)}</i><br><span style="color: darkorange"><b>Note:</b> {html.escape(warning)}</span>'
 
+    def _dpi_note(self) -> str:
+        """Which resolution to choose, and the size in pixels of the plots at the resolution of the form"""
+        p = self.parameters
+        low, high = SEPPACT_parameters.SCREEN_DPIS
+        n_groups = sum(len(groups) for groups in p.group_options.values())
+        width, height = (round(inches * p.plot_dpi) for inches in (PLOT_WIDTH, plot_height(p.panel_height, n_groups)))
+        return html.escape(
+            f"{SEPPACT_parameters.PRINT_DPI} dpi for papers and posters: the resolution expected in print. {low} to "
+            f"{high} dpi for screens and slides: just as sharp there, with files about a third smaller at {high} dpi. "
+            f"At {p.plot_dpi} dpi, the plots of {count(n_groups, 'channel group')} are {width} × {height} pixels.")
+
     def _update_height_note(self) -> None:
+        """Shows the notes on the size of the plots again: the height and the resolution"""
         if self._wgt_height_note is not None:
             self._wgt_height_note.value = self._height_note()
+            self._wgt_dpi_note.value = f"<i>{self._dpi_note()}</i>"
 
     # --- Steps ---
     def _form_errors(self) -> bool:

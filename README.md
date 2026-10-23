@@ -71,7 +71,7 @@ The [user guide](https://github.com/spearhead-he/sep-pact/blob/main/docs/user_gu
 <img src="https://raw.githubusercontent.com/spearhead-he/sep-pact/main/docs/images/example_event.png" width="800" alt="Plot of the example event">
 
 The plot of the example event (2021-11-01) has one panel per channel group: 1 MeV electrons, 5.99-18.83 MeV electrons, and 8, 25 and 50 MeV protons. Each panel shows the flux at the chosen resolution and viewing, with:
-- the background window (green) and level (blue), and the onset threshold (red, dashed);
+- the background window (blue-grey) and level (blue), and the onset threshold (red, dashed);
 - the onset time (green line), calculated with the n-sigma method;
 - the peak flux (red point);
 - the fluence interval (brown), calculated following [Jiggens et al. (2018)](https://doi.org/10.1051/swsc/2018010);
