@@ -1,4 +1,5 @@
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.20157436-blue)](https://doi.org/10.5281/zenodo.20157436)
+[![PyPI](https://img.shields.io/pypi/v/spearhead-sep-pact)](https://pypi.org/project/spearhead-sep-pact/)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)](https://www.python.org/)
 [![pytest](https://github.com/spearhead-he/sep-pact/actions/workflows/pytest.yml/badge.svg)](https://github.com/spearhead-he/sep-pact/actions/workflows/pytest.yml)
 [![codecov](https://codecov.io/gh/spearhead-he/sep-pact/branch/main/graph/badge.svg)](https://codecov.io/gh/spearhead-he/sep-pact)
@@ -41,10 +42,20 @@ You can access SEP-PACT online on the JupyterHub server of the SPEARHEAD project
 ### Install locally
 
 1. Install Python 3.11 or newer, e.g. with [miniforge](https://github.com/conda-forge/miniforge).
-2. Clone the repository: `git clone https://github.com/spearhead-he/sep-pact.git`, and open a terminal in the `sep-pact` folder.
-3. Create a new virtual environment and activate it, e.g. `python -m venv venv_sep_pact` and `source venv_sep_pact/bin/activate`.
-4. Install the package and the notebook dependencies: `pip install -r requirements.txt` (the same as `pip install -e ".[notebook]"`).
-5. Open the notebook: `jupyter-lab sep-pact.ipynb`.
+2. Create a new virtual environment and activate it, e.g. `python -m venv venv_sep_pact` and `source venv_sep_pact/bin/activate` (on Windows, `venv_sep_pact\Scripts\activate`).
+3. Install SEP-PACT from [PyPI](https://pypi.org/project/spearhead-sep-pact/) with the notebook dependencies: `pip install "spearhead-sep-pact[notebook]"`.
+4. Download the notebook and its example files for the installed version into a new folder: `spearhead-sep-pact-notebooks sep-pact`.
+5. Open the notebook: `cd sep-pact` and `jupyter-lab sep-pact.ipynb`.
+
+Without the notebook, e.g. for scripts, `pip install spearhead-sep-pact` is enough (see the [library guide](https://github.com/spearhead-he/sep-pact/blob/main/docs/library.md)).
+
+### Install from the repository
+
+For the latest code, or for development:
+
+1. Clone the repository: `git clone https://github.com/spearhead-he/sep-pact.git`, and open a terminal in the `sep-pact` folder.
+2. In a new virtual environment, install the package and the notebook dependencies: `pip install -r requirements.txt` (the same as `pip install -e ".[notebook]"`).
+3. Open the notebook: `jupyter-lab sep-pact.ipynb`.
 
 ## How to use
 

@@ -62,6 +62,9 @@ test = [
     "pytest-mpl",
 ]
 
+[project.scripts]
+spearhead-sep-pact-notebooks = "spearhead.sep_pact.notebooks:main"
+
 [project.urls]
 Repository = "https://github.com/spearhead-he/sep-pact"
 Documentation = "https://github.com/spearhead-he/sep-pact/tree/main/docs"
